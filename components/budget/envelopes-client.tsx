@@ -280,8 +280,8 @@ export function EnvelopesClient({ householdId, initialSets }: EnvelopesClientPro
               className="rounded-xl border border-border bg-card shadow-sm overflow-hidden"
             >
               {/* Set header */}
-              <div className="flex items-center gap-2 px-4 py-3 bg-muted/30 border-b border-border">
-                <div className="flex gap-1">
+              <div className="flex items-center gap-2 px-4 py-3 bg-muted/30 border-b border-border min-w-0">
+                <div className="flex gap-1 shrink-0">
                   <Button
                     variant="ghost"
                     size="icon"
@@ -303,10 +303,10 @@ export function EnvelopesClient({ householdId, initialSets }: EnvelopesClientPro
                     <ChevronDown className="h-3 w-3" />
                   </Button>
                 </div>
-                <span className="flex-1 font-semibold text-sm text-foreground">
+                <span className="flex-1 font-semibold text-sm text-foreground truncate min-w-0">
                   {set.name}
                 </span>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 shrink-0">
                   <Button
                     variant="ghost"
                     size="icon"
@@ -356,11 +356,11 @@ export function EnvelopesClient({ householdId, initialSets }: EnvelopesClientPro
                     <li
                       key={env.id}
                       className={cn(
-                        "flex items-center gap-2 px-4 py-2.5 hover:bg-muted/20 transition-colors",
+                        "flex items-center gap-2 px-4 py-2.5 hover:bg-muted/20 transition-colors min-w-0",
                         env.isArchived && "opacity-50"
                       )}
                     >
-                      <div className="flex gap-1">
+                      <div className="flex gap-1 shrink-0">
                         <Button
                           variant="ghost"
                           size="icon"
@@ -382,15 +382,15 @@ export function EnvelopesClient({ householdId, initialSets }: EnvelopesClientPro
                           <ChevronDown className="h-3 w-3" />
                         </Button>
                       </div>
-                      <span className="flex-1 text-sm text-foreground">
+                      <span className="flex-1 text-sm text-foreground truncate min-w-0">
                         {env.name}
                         {env.isArchived && (
-                          <span className="ml-2 text-xs text-muted-foreground italic">
+                          <span className="ml-2 text-xs text-muted-foreground italic shrink-0">
                             (archived)
                           </span>
                         )}
                       </span>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 shrink-0">
                         <Button
                           variant="ghost"
                           size="icon"

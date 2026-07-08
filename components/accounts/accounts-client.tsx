@@ -132,7 +132,7 @@ export function AccountsClient({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="opacity-0 group-hover:opacity-100 h-8 px-2"
+                        className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 h-8 px-2"
                       >
                         Options
                       </Button>

@@ -110,7 +110,7 @@ export function ReportsClient({
   const availableYears = useMemo(() => {
     const years = new Set<number>([currentYear]);
     transactions.forEach((t) => {
-      const year = new Date(t.date).getFullYear();
+      const year = new Date(t.date).getUTCFullYear();
       if (!isNaN(year)) years.add(year);
     });
     return Array.from(years).sort((a, b) => b - a);
@@ -137,8 +137,8 @@ export function ReportsClient({
 
     transactions.forEach((t) => {
       const tDate = new Date(t.date);
-      const tMonth = tDate.getMonth() + 1;
-      const tYear = tDate.getFullYear();
+      const tMonth = tDate.getUTCMonth() + 1;
+      const tYear = tDate.getUTCFullYear();
 
       if (tMonth === selectedMonth && tYear === selectedYear) {
         if (t.type === "INCOME") {
@@ -199,8 +199,8 @@ export function ReportsClient({
     let totalSpent = 0;
     transactions.forEach((t) => {
       const tDate = new Date(t.date);
-      const tMonth = tDate.getMonth() + 1;
-      const tYear = tDate.getFullYear();
+      const tMonth = tDate.getUTCMonth() + 1;
+      const tYear = tDate.getUTCFullYear();
 
       if (tMonth === selectedMonth && tYear === selectedYear && t.type === "EXPENSE" && t.envelopeId) {
         const envInfo = envMap[t.envelopeId];
@@ -265,8 +265,8 @@ export function ReportsClient({
     // Populate values
     transactions.forEach((t) => {
       const tDate = new Date(t.date);
-      const tMonth = tDate.getMonth() + 1;
-      const tYear = tDate.getFullYear();
+      const tMonth = tDate.getUTCMonth() + 1;
+      const tYear = tDate.getUTCFullYear();
 
       const monthMatch = trendData.find((item) => item.month === tMonth && item.year === tYear);
       if (monthMatch) {
@@ -596,10 +596,10 @@ export function ReportsClient({
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-border">
+      <div className="flex border-b border-border overflow-x-auto whitespace-nowrap -mx-4 px-4 sm:mx-0 sm:px-0 [mask-image:linear-gradient(to_right,white_85%,transparent_100%)] sm:[mask-image:none]">
         <button
           onClick={() => setActiveTab("spending")}
-          className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold border-b-2 -mb-[2px] transition-all ${
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold border-b-2 -mb-[2px] transition-all shrink-0 ${
             activeTab === "spending"
               ? "border-primary text-primary"
               : "border-transparent text-muted-foreground hover:text-foreground"
@@ -610,7 +610,7 @@ export function ReportsClient({
         </button>
         <button
           onClick={() => setActiveTab("income-expense")}
-          className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold border-b-2 -mb-[2px] transition-all ${
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold border-b-2 -mb-[2px] transition-all shrink-0 ${
             activeTab === "income-expense"
               ? "border-primary text-primary"
               : "border-transparent text-muted-foreground hover:text-foreground"
@@ -621,7 +621,7 @@ export function ReportsClient({
         </button>
         <button
           onClick={() => setActiveTab("goals")}
-          className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold border-b-2 -mb-[2px] transition-all ${
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold border-b-2 -mb-[2px] transition-all shrink-0 ${
             activeTab === "goals"
               ? "border-primary text-primary"
               : "border-transparent text-muted-foreground hover:text-foreground"

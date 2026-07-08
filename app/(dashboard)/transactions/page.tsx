@@ -4,13 +4,27 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getTransactions } from "@/app/actions/transactions";
 import { getAccounts } from "@/app/actions/accounts";
+import { getEnvelopes } from "@/app/actions/budget";
 import { TransactionsTable } from "@/components/transactions/transactions-table";
 import { TransactionsSkeleton } from "@/components/transactions/transactions-skeleton";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Transactions" };
 
-async function TransactionsContent() {
+interface PageProps {
+  searchParams: Promise<{
+    envelopeId?: string;
+    from?: string;
+    to?: string;
+    page?: string;
+  }>;
+}
+
+async function TransactionsContent({
+  searchParams,
+}: {
+  searchParams: { envelopeId?: string; from?: string; to?: string; page?: string };
+}) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
@@ -20,29 +34,31 @@ async function TransactionsContent() {
   });
   if (!member) redirect("/register");
 
-  const [{ transactions, total }, accounts] = await Promise.all([
-    getTransactions(member.householdId, { limit: 25 }),
+  const fromDate = searchParams.from ? new Date(searchParams.from) : undefined;
+  const toDate = searchParams.to ? new Date(searchParams.to) : undefined;
+  const pageNum = searchParams.page ? parseInt(searchParams.page, 10) : 0;
+  const offset = pageNum * 25;
+
+  const [{ transactions, total }, accounts, envelopeSets] = await Promise.all([
+    getTransactions(member.householdId, {
+      limit: 25,
+      offset,
+      envelopeId: searchParams.envelopeId,
+      from: fromDate,
+      to: toDate,
+    }),
     getAccounts(member.householdId),
+    getEnvelopes(member.householdId),
   ]);
 
-  // Fetch all envelopes for the add dialog + filter dropdown
-  const envelopeSets = await prisma.envelopeSet.findMany({
-    where: { householdId: member.householdId },
-    orderBy: { position: "asc" },
-    include: {
-      envelopes: {
-        where: { isArchived: false },
-        orderBy: { position: "asc" },
-      },
-    },
-  });
-
   const envelopes = envelopeSets.flatMap((set: any) =>
-    set.envelopes.map((env: any) => ({
-      id: env.id,
-      name: env.name,
-      setName: set.name,
-    }))
+    (set.envelopes || [])
+      .filter((env: any) => !env.isArchived)
+      .map((env: any) => ({
+        id: env.id,
+        name: env.name,
+        setName: set.name,
+      }))
   );
 
   return (
@@ -60,15 +76,17 @@ async function TransactionsContent() {
         householdId={member.householdId}
         envelopes={envelopes}
         accounts={accounts}
+        initialFilters={searchParams}
       />
     </div>
   );
 }
 
-export default function TransactionsPage() {
+export default async function TransactionsPage({ searchParams }: PageProps) {
+  const params = await searchParams;
   return (
-    <Suspense fallback={<TransactionsSkeleton />}>
-      <TransactionsContent />
+    <Suspense fallback={<TransactionsSkeleton />} key={JSON.stringify(params)}>
+      <TransactionsContent searchParams={params} />
     </Suspense>
   );
 }

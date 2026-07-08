@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth-helpers";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 
 // ─────────────────────────────────────────────────────────
@@ -31,9 +31,32 @@ export interface EnvelopeSetWithData {
   envelopes: EnvelopeWithData[];
 }
 
+export interface DashboardSummary {
+  toBudgetPaise: number;
+  availablePaise: number;
+  totalIncomePaise: number;
+  totalAllocatedPaise: number;
+}
+
 // ─────────────────────────────────────────────────────────
-// Fetch
+// Fetch Utilities with Data Caching
 // ─────────────────────────────────────────────────────────
+
+/**
+ * Returns basic list of EnvelopeSets + Envelopes for a household.
+ */
+export async function getEnvelopes(householdId: string): Promise<EnvelopeSetWithData[]> {
+  const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+  const res = await fetch(
+    `${baseUrl}/api/envelopes?householdId=${householdId}`,
+    {
+      headers: { "x-household-id": householdId },
+      next: { tags: ["household_envelopes"] },
+    }
+  );
+  if (!res.ok) throw new Error("Failed to fetch envelopes");
+  return res.json();
+}
 
 /**
  * Returns all EnvelopeSets + Envelopes with allocation and balance data
@@ -44,146 +67,28 @@ export async function getEnvelopeSetsWithData(
   month: number,
   year: number
 ): Promise<EnvelopeSetWithData[]> {
-  const sets = await prisma.envelopeSet.findMany({
-    where: { householdId },
-    orderBy: { position: "asc" },
-    include: {
-      envelopes: {
-        where: { isArchived: false },
-        orderBy: { position: "asc" },
-        include: {
-          allocations: {
-            where: { month, year },
-          },
-          transactions: {
-            where: {
-              type: "EXPENSE",
-              date: {
-                gte: new Date(year, month - 1, 1),
-                lt: new Date(year, month, 1),
-              },
-            },
-          },
-        },
-      },
-    },
-  });
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return sets.map((set: any) => ({
-    id: set.id,
-    name: set.name,
-    position: set.position,
-    accountId: set.accountId,
-    startsOnDay: set.startsOnDay,
-    envelopes: set.envelopes.map((env: any) => {
-      const allocatedPaise = env.allocations[0]?.amountInPaise ?? 0;
-      const spentPaise = env.transactions.reduce(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (sum: number, t: any) => sum + t.amountInPaise,
-        0
-      );
-
-      // ── Rollover calculation (Step 5) ──────────────────────────
-      // Sum all allocations and expenses prior to this month to get
-      // the running balance carried forward.
-      // Note: this is computed lazily — the heavy version is done
-      // in the dedicated getRollover() helper below and merged in.
-      const availablePaise = allocatedPaise - spentPaise;
-
-      return {
-        id: env.id,
-        name: env.name,
-        isArchived: env.isArchived,
-        position: env.position,
-        allocatedPaise,
-        spentPaise,
-        availablePaise,
-        isGoal: env.isGoal,
-        goalAmountInPaise: env.goalAmountInPaise,
-        goalDeadline: env.goalDeadline,
-      };
-    }),
-  }));
-}
-
-/**
- * Calculates the rollover (previous ending balance) for one envelope.
- * Rollover = sum(allocated - spent) for all months before the given one.
- */
-async function getEnvelopeRollover(
-  envelopeId: string,
-  month: number,
-  year: number
-): Promise<number> {
-  // Build a date boundary: start of the current month
-  const boundary = new Date(year, month - 1, 1);
-
-  const [allocationAgg, expenseAgg, incomeAgg] = await Promise.all([
-    // All allocations before this month
-    prisma.allocation.aggregate({
-      where: {
-        envelopeId,
-        OR: [
-          { year: { lt: year } },
-          { year, month: { lt: month } },
-        ],
-      },
-      _sum: { amountInPaise: true },
-    }),
-    // All expenses before this month
-    prisma.transaction.aggregate({
-      where: {
-        envelopeId,
-        type: "EXPENSE",
-        date: { lt: boundary },
-      },
-      _sum: { amountInPaise: true },
-    }),
-    // All income credited directly to this envelope before this month
-    prisma.transaction.aggregate({
-      where: {
-        envelopeId,
-        type: "INCOME",
-        date: { lt: boundary },
-      },
-      _sum: { amountInPaise: true },
-    }),
-  ]);
-
-  const totalAllocated = allocationAgg._sum.amountInPaise ?? 0;
-  const totalSpent = expenseAgg._sum.amountInPaise ?? 0;
-  const totalIncome = incomeAgg._sum.amountInPaise ?? 0;
-
-  return totalAllocated + totalIncome - totalSpent;
+  const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+  const res = await fetch(
+    `${baseUrl}/api/envelopes?householdId=${householdId}&month=${month}&year=${year}`,
+    {
+      headers: { "x-household-id": householdId },
+      next: { tags: ["household_envelopes"] },
+    }
+  );
+  if (!res.ok) throw new Error("Failed to fetch envelopes with data");
+  return res.json();
 }
 
 /**
  * Returns full available balance including rollover for all envelopes.
- * This is a heavier query used on the Budget page.
  */
 export async function getEnvelopeSetsWithRollover(
   householdId: string,
   month: number,
   year: number
 ): Promise<EnvelopeSetWithData[]> {
-  const sets = await getEnvelopeSetsWithData(householdId, month, year);
-
-  // Compute rollovers in parallel
-  const setsWithRollover = await Promise.all(
-    sets.map(async (set) => ({
-      ...set,
-      envelopes: await Promise.all(
-        set.envelopes.map(async (env) => {
-          const rollover = await getEnvelopeRollover(env.id, month, year);
-          const availablePaise = rollover + env.allocatedPaise - env.spentPaise;
-          return { ...env, availablePaise };
-        })
-      ),
-    }))
-  );
-
-  return setsWithRollover;
+  // Our API endpoint already includes rollover when month/year are provided
+  return getEnvelopeSetsWithData(householdId, month, year);
 }
 
 /**
@@ -194,18 +99,28 @@ export async function getTotalIncome(
   month: number,
   year: number
 ): Promise<number> {
-  const result = await prisma.transaction.aggregate({
-    where: {
-      householdId,
-      type: "INCOME",
-      date: {
-        gte: new Date(year, month - 1, 1),
-        lt: new Date(year, month, 1),
-      },
-    },
-    _sum: { amountInPaise: true },
-  });
-  return result._sum.amountInPaise ?? 0;
+  const summary = await getDashboardSummary(householdId, month, year);
+  return summary.totalIncomePaise;
+}
+
+/**
+ * Returns the calculated dashboard summary balances (To Budget, Available).
+ */
+export async function getDashboardSummary(
+  householdId: string,
+  month: number,
+  year: number
+): Promise<DashboardSummary> {
+  const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+  const res = await fetch(
+    `${baseUrl}/api/dashboard-summary?householdId=${householdId}&month=${month}&year=${year}`,
+    {
+      headers: { "x-household-id": householdId },
+      next: { tags: ["household_dashboard_summary"] },
+    }
+  );
+  if (!res.ok) throw new Error("Failed to fetch dashboard summary");
+  return res.json();
 }
 
 // ─────────────────────────────────────────────────────────
@@ -249,6 +164,9 @@ export async function saveAllocation(
     },
   });
 
+  // Revalidate tags & paths
+  revalidateTag("household_envelopes", "max");
+  revalidateTag("household_dashboard_summary", "max");
   revalidatePath("/budget");
   return { success: true };
 }
@@ -275,6 +193,9 @@ export async function createEnvelopeSet(householdId: string, name: string) {
     data: { name: parsed.data.name, householdId, position: count },
   });
 
+  // Revalidate tags & paths
+  revalidateTag("household_envelopes", "max");
+  revalidateTag("household_dashboard_summary", "max");
   revalidatePath("/envelopes");
   revalidatePath("/budget");
   return { success: true, id: set.id };
@@ -283,6 +204,9 @@ export async function createEnvelopeSet(householdId: string, name: string) {
 export async function updateEnvelopeSet(id: string, name: string) {
   await requireAuth();
   await prisma.envelopeSet.update({ where: { id }, data: { name } });
+  
+  // Revalidate tags & paths
+  revalidateTag("household_envelopes", "max");
   revalidatePath("/envelopes");
   revalidatePath("/budget");
   return { success: true };
@@ -291,6 +215,10 @@ export async function updateEnvelopeSet(id: string, name: string) {
 export async function deleteEnvelopeSet(id: string) {
   await requireAuth();
   await prisma.envelopeSet.delete({ where: { id } });
+  
+  // Revalidate tags & paths
+  revalidateTag("household_envelopes", "max");
+  revalidateTag("household_dashboard_summary", "max");
   revalidatePath("/envelopes");
   revalidatePath("/budget");
   return { success: true };
@@ -308,6 +236,9 @@ export async function updateEnvelopeSetSettings(
       startsOnDay: settings.startsOnDay,
     },
   });
+  
+  // Revalidate tags & paths
+  revalidateTag("household_envelopes", "max");
   revalidatePath("/envelopes");
   revalidatePath("/budget");
   return { success: true };
@@ -329,6 +260,9 @@ export async function createEnvelope(envelopeSetId: string, name: string) {
     data: { name: parsed.data.name, envelopeSetId, position: count },
   });
 
+  // Revalidate tags & paths
+  revalidateTag("household_envelopes", "max");
+  revalidateTag("household_dashboard_summary", "max");
   revalidatePath("/envelopes");
   revalidatePath("/budget");
   return { success: true, id: envelope.id };
@@ -337,6 +271,9 @@ export async function createEnvelope(envelopeSetId: string, name: string) {
 export async function updateEnvelope(id: string, name: string) {
   await requireAuth();
   await prisma.envelope.update({ where: { id }, data: { name } });
+  
+  // Revalidate tags & paths
+  revalidateTag("household_envelopes", "max");
   revalidatePath("/envelopes");
   revalidatePath("/budget");
   return { success: true };
@@ -345,6 +282,10 @@ export async function updateEnvelope(id: string, name: string) {
 export async function archiveEnvelope(id: string, isArchived: boolean) {
   await requireAuth();
   await prisma.envelope.update({ where: { id }, data: { isArchived } });
+  
+  // Revalidate tags & paths
+  revalidateTag("household_envelopes", "max");
+  revalidateTag("household_dashboard_summary", "max");
   revalidatePath("/envelopes");
   revalidatePath("/budget");
   return { success: true };
@@ -361,6 +302,9 @@ export async function toggleGoal(
     where: { id },
     data: { isGoal, goalAmountInPaise, goalDeadline },
   });
+  
+  // Revalidate tags & paths
+  revalidateTag("household_envelopes", "max");
   revalidatePath("/envelopes");
   revalidatePath("/budget");
   return { success: true };
@@ -369,6 +313,10 @@ export async function toggleGoal(
 export async function deleteEnvelope(id: string) {
   await requireAuth();
   await prisma.envelope.delete({ where: { id } });
+  
+  // Revalidate tags & paths
+  revalidateTag("household_envelopes", "max");
+  revalidateTag("household_dashboard_summary", "max");
   revalidatePath("/envelopes");
   revalidatePath("/budget");
   return { success: true };
@@ -386,6 +334,9 @@ export async function reorderEnvelopeSets(
       })
     )
   );
+  
+  // Revalidate tags & paths
+  revalidateTag("household_envelopes", "max");
   revalidatePath("/envelopes");
   revalidatePath("/budget");
   return { success: true };
@@ -401,6 +352,9 @@ export async function reorderEnvelopes(items: { id: string; position: number }[]
       })
     )
   );
+  
+  // Revalidate tags & paths
+  revalidateTag("household_envelopes", "max");
   revalidatePath("/envelopes");
   revalidatePath("/budget");
   return { success: true };

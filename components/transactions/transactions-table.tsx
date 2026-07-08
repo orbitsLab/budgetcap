@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { toast } from "sonner";
 import { deleteTransaction } from "@/app/actions/transactions";
 import type { TransactionWithRelations } from "@/app/actions/transactions";
@@ -28,6 +29,7 @@ import {
 import { Trash2, RepeatIcon, Filter, ChevronLeft, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { AddTransactionDialog } from "./add-transaction-dialog";
+import { EditTransactionDialog } from "./edit-transaction-dialog";
 
 interface EnvelopeOption {
   id: string;
@@ -45,6 +47,7 @@ interface TransactionsTableProps {
     envelopeId?: string;
     from?: string;
     to?: string;
+    page?: string;
   };
 }
 
@@ -64,16 +67,48 @@ export function TransactionsTable({
   accounts,
   initialFilters,
 }: TransactionsTableProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+
   const [transactions, setTransactions] = useState(initialTransactions);
   const [isPending, startTransition] = useTransition();
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(initialFilters?.page ? parseInt(initialFilters.page, 10) : 0);
 
   // Filters
   const [filterEnvelope, setFilterEnvelope] = useState(initialFilters?.envelopeId ?? "all");
   const [filterFrom, setFilterFrom] = useState(initialFilters?.from ?? "");
   const [filterTo, setFilterTo] = useState(initialFilters?.to ?? "");
 
+  // Sync with prop changes (e.g. after database mutations or query updates)
+  useEffect(() => {
+    setTransactions(initialTransactions);
+  }, [initialTransactions]);
+
+  useEffect(() => {
+    setFilterEnvelope(initialFilters?.envelopeId ?? "all");
+    setFilterFrom(initialFilters?.from ?? "");
+    setFilterTo(initialFilters?.to ?? "");
+    setPage(initialFilters?.page ? parseInt(initialFilters.page, 10) : 0);
+  }, [initialFilters]);
+
   const totalPages = Math.ceil(initialTotal / PAGE_SIZE);
+
+  const applyFilters = (envelopeId: string, from: string, to: string, newPage: number) => {
+    const params = new URLSearchParams();
+    if (envelopeId && envelopeId !== "all") {
+      params.set("envelopeId", envelopeId);
+    }
+    if (from) {
+      params.set("from", from);
+    }
+    if (to) {
+      params.set("to", to);
+    }
+    if (newPage > 0) {
+      params.set("page", newPage.toString());
+    }
+    router.push(`${pathname}?${params.toString()}`);
+  };
 
   function handleDelete(id: string) {
     if (!confirm("Delete this transaction?")) return;
@@ -87,50 +122,74 @@ export function TransactionsTable({
   return (
     <div className="space-y-4">
       {/* Filters bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 rounded-xl border border-border bg-card p-4">
-        <Filter className="h-4 w-4 text-muted-foreground hidden sm:block shrink-0" />
-        <div className="flex flex-wrap items-center gap-3 flex-1">
-          {/* Date range */}
-          <div className="flex items-center gap-2">
-            <Input
-              type="date"
-              value={filterFrom}
-              onChange={(e) => setFilterFrom(e.target.value)}
-              className="h-8 w-36 text-xs"
-              id="filter-from-date"
-              aria-label="From date"
-            />
-            <span className="text-muted-foreground text-xs">to</span>
-            <Input
-              type="date"
-              value={filterTo}
-              onChange={(e) => setFilterTo(e.target.value)}
-              className="h-8 w-36 text-xs"
-              id="filter-to-date"
-              aria-label="To date"
-            />
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 rounded-xl border border-border bg-card p-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 min-w-0">
+          <div className="flex items-center gap-2 shrink-0">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium text-foreground sm:hidden">Filters</span>
           </div>
+          
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
+            {/* Date range */}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <Input
+                type="date"
+                value={filterFrom}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setFilterFrom(val);
+                  applyFilters(filterEnvelope, val, filterTo, 0);
+                }}
+                className="h-9 sm:h-8 flex-1 sm:w-36 text-xs"
+                id="filter-from-date"
+                aria-label="From date"
+              />
+              <span className="text-muted-foreground text-xs shrink-0">to</span>
+              <Input
+                type="date"
+                value={filterTo}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setFilterTo(val);
+                  applyFilters(filterEnvelope, filterFrom, val, 0);
+                }}
+                className="h-9 sm:h-8 flex-1 sm:w-36 text-xs"
+                id="filter-to-date"
+                aria-label="To date"
+              />
+            </div>
 
-          {/* Envelope filter */}
-          <Select value={filterEnvelope} onValueChange={setFilterEnvelope}>
-            <SelectTrigger className="h-8 w-48 text-xs" id="filter-envelope">
-              <SelectValue placeholder="All envelopes" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All envelopes</SelectItem>
-              {envelopes.map((e) => (
-                <SelectItem key={e.id} value={e.id}>
-                  {e.setName} → {e.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            {/* Envelope filter */}
+            <Select
+              value={filterEnvelope}
+              onValueChange={(val) => {
+                setFilterEnvelope(val);
+                applyFilters(val, filterFrom, filterTo, 0);
+              }}
+            >
+              <SelectTrigger className="h-9 sm:h-8 w-full sm:w-48 text-xs" id="filter-envelope">
+                <SelectValue placeholder="All envelopes" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All envelopes</SelectItem>
+                {envelopes.map((e) => (
+                  <SelectItem key={e.id} value={e.id}>
+                    {e.setName} → {e.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-        <AddTransactionDialog householdId={householdId} envelopes={envelopes} accounts={accounts} />
+        
+        {/* Add Transaction Button */}
+        <div className="w-full md:w-auto shrink-0">
+          <AddTransactionDialog householdId={householdId} envelopes={envelopes} accounts={accounts} />
+        </div>
       </div>
 
-      {/* Table */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
+      {/* Desktop Table (hidden on mobile) */}
+      <div className="hidden sm:block rounded-xl border border-border bg-card overflow-hidden shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
@@ -200,22 +259,113 @@ export function TransactionsTable({
                     {formatINR(tx.amountInPaise)}
                   </TableCell>
                   <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                      onClick={() => handleDelete(tx.id)}
-                      disabled={isPending}
-                      aria-label="Delete transaction"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    <div className="flex items-center justify-end gap-1">
+                      <EditTransactionDialog
+                        transaction={tx}
+                        householdId={householdId}
+                        envelopes={envelopes}
+                        accounts={accounts}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                        onClick={() => handleDelete(tx.id)}
+                        disabled={isPending}
+                        aria-label="Delete transaction"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
             )}
           </TableBody>
         </Table>
+      </div>
+
+      {/* Mobile Card List (hidden on desktop) */}
+      <div className="space-y-3 sm:hidden">
+        {transactions.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-muted/30 p-8 text-center text-muted-foreground text-sm">
+            No transactions yet. Add one above!
+          </div>
+        ) : (
+          transactions.map((tx) => (
+            <div key={tx.id} className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
+              {/* Header: Date and Type Badge */}
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>{format(new Date(tx.date), "dd MMM yyyy")}</span>
+                <div className="flex items-center gap-2">
+                  <Badge variant={TYPE_LABELS[tx.type]?.variant ?? "outline"}>
+                    {TYPE_LABELS[tx.type]?.label ?? tx.type}
+                  </Badge>
+                  {tx.isRecurring && (
+                    <RepeatIcon
+                      className="h-3.5 w-3.5 text-primary shrink-0"
+                      aria-label="Recurring transaction"
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* Body: Payee, Envelope, Notes */}
+              <div className="space-y-1">
+                <div className="font-semibold text-sm text-foreground flex items-center justify-between">
+                  <span>{tx.payee ?? <span className="text-muted-foreground italic font-normal">—</span>}</span>
+                  <span
+                    className={cn(
+                      "font-semibold text-sm tabular-nums",
+                      tx.type === "INCOME"
+                        ? "text-positive"
+                        : tx.type === "EXPENSE"
+                        ? "text-negative"
+                        : "text-foreground"
+                    )}
+                  >
+                    {tx.type === "EXPENSE" ? "−" : "+"}
+                    {formatINR(tx.amountInPaise)}
+                  </span>
+                </div>
+                
+                <div className="text-xs text-muted-foreground flex justify-between">
+                  <span>
+                    {tx.type === "TRANSFER" ? (
+                      <span>
+                        {tx.envelope?.name ?? "—"} → {tx.toEnvelope?.name ?? "—"}
+                      </span>
+                    ) : (
+                      tx.envelope?.name ?? <span className="italic">—</span>
+                    )}
+                  </span>
+                  {tx.notes && <span className="truncate max-w-[150px]">{tx.notes}</span>}
+                </div>
+              </div>
+
+              {/* Action Footer: Edit and Delete buttons */}
+              <div className="flex justify-end items-center gap-1 border-t border-border/40 pt-2">
+                <EditTransactionDialog
+                  transaction={tx}
+                  householdId={householdId}
+                  envelopes={envelopes}
+                  accounts={accounts}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-muted-foreground hover:text-destructive gap-1 px-2"
+                  onClick={() => handleDelete(tx.id)}
+                  disabled={isPending}
+                  aria-label="Delete transaction"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span className="text-xs">Delete</span>
+                </Button>
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
       {/* Pagination */}
@@ -229,7 +379,11 @@ export function TransactionsTable({
               variant="outline"
               size="icon"
               className="h-8 w-8"
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              onClick={() => {
+                const newP = Math.max(0, page - 1);
+                setPage(newP);
+                applyFilters(filterEnvelope, filterFrom, filterTo, newP);
+              }}
               disabled={page === 0}
             >
               <ChevronLeft className="h-4 w-4" />
@@ -238,7 +392,11 @@ export function TransactionsTable({
               variant="outline"
               size="icon"
               className="h-8 w-8"
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              onClick={() => {
+                const newP = Math.min(totalPages - 1, page + 1);
+                setPage(newP);
+                applyFilters(filterEnvelope, filterFrom, filterTo, newP);
+              }}
               disabled={page >= totalPages - 1}
             >
               <ChevronRight className="h-4 w-4" />

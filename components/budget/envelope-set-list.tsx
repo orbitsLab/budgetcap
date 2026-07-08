@@ -84,7 +84,7 @@ function EnvelopeSetCard({
       <div className="flex items-center w-full px-4 py-2 hover:bg-muted/40 transition-colors">
         <button
           onClick={() => setCollapsed((c) => !c)}
-          className="flex-1 flex items-center justify-between text-left h-10"
+          className="flex-1 flex items-center justify-between text-left py-2"
           aria-expanded={!collapsed}
           id={`envelope-set-${set.id}-toggle`}
         >
@@ -99,9 +99,15 @@ function EnvelopeSetCard({
                 {set.name}
                 {linkedAccount ? ` (${linkedAccount.name})` : ""}
               </span>
+              <div className="flex items-center gap-2 text-[10px] text-muted-foreground sm:hidden mt-0.5">
+                <span>Avail: <strong className={setAvailable < 0 ? "text-negative" : "text-positive"}>{formatINR(setAvailable)}</strong></span>
+                <span>•</span>
+                <span>Spent: <strong className="text-foreground">{formatINR(setSpent)}</strong></span>
+              </div>
               {set.accountId && set.startsOnDay > 1 && (
-                <span className="text-[10px] text-muted-foreground">
-                  Starts on the {set.startsOnDay}{set.startsOnDay === 1 ? "st" : set.startsOnDay === 2 ? "nd" : set.startsOnDay === 3 ? "rd" : "th"}
+                <span className="text-[10px] text-muted-foreground mt-0.5">
+                  Starts on the {set.startsOnDay}
+                  {set.startsOnDay === 1 ? "st" : set.startsOnDay === 2 ? "nd" : set.startsOnDay === 3 ? "rd" : "th"}
                 </span>
               )}
             </div>
@@ -129,14 +135,14 @@ function EnvelopeSetCard({
         <div className="divide-y divide-border border-t border-border">
           {/* Column headers */}
           {!isGoalSet ? (
-            <div className="grid grid-cols-[1fr_140px_120px_100px] gap-2 px-4 py-2 bg-muted/30 text-xs font-medium text-muted-foreground">
+            <div className="hidden sm:grid grid-cols-[1fr_140px_120px_100px] gap-2 px-4 py-2 bg-muted/30 text-xs font-medium text-muted-foreground">
               <span>Envelope</span>
               <span className="text-right">Allocated (₹)</span>
               <span className="text-right">Spent</span>
               <span className="text-right">Available</span>
             </div>
           ) : (
-            <div className="grid grid-cols-[1fr_140px_120px] gap-4 px-4 py-2 bg-muted/30 text-xs font-medium text-muted-foreground">
+            <div className="hidden sm:grid grid-cols-[1fr_140px_120px] gap-4 px-4 py-2 bg-muted/30 text-xs font-medium text-muted-foreground">
               <span>Goal</span>
               <span className="text-right">Save This Month (₹)</span>
               <span className="text-right">Saved</span>
@@ -223,52 +229,84 @@ function EnvelopeRow({
     env.availablePaise - env.allocatedPaise + currentPaise;
   const isNegative = currentAvailable < 0;
 
-  return (
-    <div className="grid grid-cols-[1fr_140px_120px_100px] gap-2 items-center px-4 py-2.5 hover:bg-muted/20 transition-colors group">
-      {/* Name */}
-      <span className="text-sm text-foreground font-medium truncate">{env.name}</span>
+  const currentAllocated = currentPaise;
+  const progressPercent = currentAllocated > 0 ? Math.min(100, Math.max(0, (env.spentPaise / currentAllocated) * 100)) : 0;
+  const isOverspent = env.spentPaise > currentAllocated;
 
-      {/* Allocated input */}
-      <div className="flex items-center justify-end">
-        <div className="relative w-32">
-          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
-            ₹
-          </span>
-          <input
-            id={`allocation-input-${env.id}`}
-            type="number"
-            min="0"
-            step="0.01"
-            value={inputValue}
-            onChange={handleChange}
-            onBlur={handleSave}
-            onKeyDown={(e) => e.key === "Enter" && handleSave()}
-            disabled={isPending}
-            className={cn(
-              "w-full rounded-md border border-input bg-background pl-6 pr-2 py-1.5 text-sm text-right",
-              "focus:outline-none focus:ring-1 focus:ring-ring",
-              "disabled:opacity-50 transition-opacity",
-              isPending && "opacity-60"
-            )}
-            aria-label={`Allocation for ${env.name}`}
-          />
+  return (
+    <div className="flex flex-col sm:grid sm:grid-cols-[1fr_140px_120px_100px] gap-2 sm:gap-2 items-stretch sm:items-center px-4 py-3 sm:py-2.5 hover:bg-muted/20 transition-colors group">
+      {/* Top line on mobile: Name/Progress and Input */}
+      <div className="flex items-center justify-between gap-2 sm:contents">
+        <div className="flex flex-col gap-1 min-w-0 pr-0 sm:pr-4 flex-1">
+          <span className="text-sm text-foreground font-medium truncate">{env.name}</span>
+          {currentAllocated > 0 && (
+            <div className="flex flex-col gap-1 max-w-[200px] sm:max-w-[240px]">
+              <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                <span>Spent: {formatINR(env.spentPaise)}</span>
+                <span>Allocated: {formatINR(currentAllocated)}</span>
+              </div>
+              <div className="h-1 w-full bg-muted rounded-full overflow-hidden">
+                <div 
+                  className={cn(
+                    "h-full rounded-full transition-all duration-500",
+                    isOverspent ? "bg-negative" : progressPercent >= 90 ? "bg-warning" : "bg-primary"
+                  )}
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Allocated input */}
+        <div className="flex items-center justify-end sm:contents">
+          <div className="relative w-28 sm:w-32">
+            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
+              ₹
+            </span>
+            <input
+              id={`allocation-input-${env.id}`}
+              type="number"
+              min="0"
+              step="0.01"
+              value={inputValue}
+              onChange={handleChange}
+              onBlur={handleSave}
+              onKeyDown={(e) => e.key === "Enter" && handleSave()}
+              disabled={isPending}
+              className={cn(
+                "w-full rounded-md border border-input bg-background pl-5 sm:pl-6 pr-2 py-1 text-sm text-right",
+                "focus:outline-none focus:ring-1 focus:ring-ring",
+                "disabled:opacity-50 transition-opacity",
+                isPending && "opacity-60"
+              )}
+              aria-label={`Allocation for ${env.name}`}
+            />
+          </div>
         </div>
       </div>
 
-      {/* Spent */}
-      <span className="text-sm text-right text-muted-foreground">
-        {formatINR(env.spentPaise)}
-      </span>
+      {/* Bottom line on mobile: Spent and Available */}
+      <div className="flex items-center justify-between mt-1 sm:mt-0 sm:contents text-xs sm:text-sm">
+        <div className="flex items-center gap-1 sm:block">
+          <span className="text-muted-foreground sm:hidden">Spent: </span>
+          <span className="text-muted-foreground text-right sm:block">
+            {formatINR(env.spentPaise)}
+          </span>
+        </div>
 
-      {/* Available */}
-      <span
-        className={cn(
-          "text-sm text-right font-semibold",
-          isNegative ? "text-negative" : "text-positive"
-        )}
-      >
-        {formatINR(currentAvailable)}
-      </span>
+        <div className="flex items-center gap-1 sm:block">
+          <span className="text-muted-foreground sm:hidden">Available: </span>
+          <span
+            className={cn(
+              "font-semibold text-right sm:block",
+              isNegative ? "text-negative" : "text-positive"
+            )}
+          >
+            {formatINR(currentAvailable)}
+          </span>
+        </div>
+      </div>
     </div>
   );
 }

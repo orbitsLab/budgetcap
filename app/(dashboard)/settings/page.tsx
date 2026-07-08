@@ -27,11 +27,11 @@ export default async function SettingsPage() {
 
       <div className="rounded-xl border border-border bg-card p-6 space-y-4 shadow-sm">
         <h2 className="font-semibold text-foreground">Account</h2>
-        <div className="grid grid-cols-[100px_1fr] gap-2 text-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-[120px_1fr] gap-x-2 gap-y-1 sm:gap-y-2 text-sm">
           <span className="text-muted-foreground">Name</span>
           <span className="font-medium">{user.name}</span>
           <span className="text-muted-foreground">Email</span>
-          <span className="font-medium">{user.email}</span>
+          <span className="font-medium break-all sm:break-normal">{user.email}</span>
           <span className="text-muted-foreground">Member since</span>
           <span className="font-medium">
             {new Date(user.createdAt).toLocaleDateString("en-IN", {

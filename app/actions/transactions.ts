@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth-helpers";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 
 // ─────────────────────────────────────────────────────────
@@ -84,6 +84,79 @@ export async function createTransaction(
     },
   });
 
+  // Revalidate cache tags and paths
+  revalidateTag("household_transactions", "max");
+  revalidateTag("household_envelopes", "max");
+  revalidateTag("household_dashboard_summary", "max");
+  revalidatePath("/transactions");
+  revalidatePath("/budget");
+  return { success: true, id: tx.id };
+}
+
+const updateTransactionSchema = transactionSchema.extend({
+  id: z.string().cuid(),
+});
+
+export type UpdateTransactionInput = z.infer<typeof updateTransactionSchema>;
+
+export async function updateTransaction(
+  data: UpdateTransactionInput
+): Promise<CreateTransactionResult> {
+  await requireAuth();
+
+  const parsed = updateTransactionSchema.safeParse(data);
+  if (!parsed.success) {
+    const msg = parsed.error.issues[0]?.message ?? "Invalid transaction data";
+    return { error: msg };
+  }
+
+  const {
+    id,
+    householdId,
+    type,
+    date,
+    amountInPaise,
+    payee,
+    notes,
+    envelopeId,
+    toEnvelopeId,
+    accountId,
+    toAccountId,
+    isRecurring,
+    recurringDayOfMonth,
+  } = parsed.data;
+
+  // Validate TRANSFER has both envelopes
+  if (type === "TRANSFER") {
+    if (!envelopeId || !toEnvelopeId) {
+      return { error: "Transfer requires both source and destination envelopes." };
+    }
+    if (envelopeId === toEnvelopeId) {
+      return { error: "Source and destination envelopes must be different." };
+    }
+  }
+
+  const tx = await prisma.transaction.update({
+    where: { id },
+    data: {
+      type,
+      date: new Date(date),
+      amountInPaise,
+      payee: payee || null,
+      notes: notes || null,
+      envelopeId: envelopeId || null,
+      toEnvelopeId: type === "TRANSFER" ? toEnvelopeId || null : null,
+      accountId: accountId || null,
+      toAccountId: type === "TRANSFER" ? toAccountId || null : null,
+      isRecurring: isRecurring ?? false,
+      recurringDayOfMonth: isRecurring ? recurringDayOfMonth ?? null : null,
+    },
+  });
+
+  // Revalidate cache tags and paths
+  revalidateTag("household_transactions", "max");
+  revalidateTag("household_envelopes", "max");
+  revalidateTag("household_dashboard_summary", "max");
   revalidatePath("/transactions");
   revalidatePath("/budget");
   return { success: true, id: tx.id };
@@ -95,7 +168,19 @@ export async function createTransaction(
 
 export async function deleteTransaction(id: string): Promise<{ success: boolean }> {
   await requireAuth();
+  
+  // Find transaction to get household ID
+  const tx = await prisma.transaction.findUnique({
+    where: { id },
+    select: { householdId: true },
+  });
+
   await prisma.transaction.delete({ where: { id } });
+
+  // Revalidate cache tags and paths
+  revalidateTag("household_transactions", "max");
+  revalidateTag("household_envelopes", "max");
+  revalidateTag("household_dashboard_summary", "max");
   revalidatePath("/transactions");
   revalidatePath("/budget");
   return { success: true };
@@ -113,8 +198,13 @@ export interface TransactionWithRelations {
   payee: string | null;
   notes: string | null;
   isRecurring: boolean;
+  recurringDayOfMonth?: number | null;
   envelope: { id: string; name: string } | null;
   toEnvelope: { id: string; name: string } | null;
+  envelopeId?: string | null;
+  toEnvelopeId?: string | null;
+  accountId?: string | null;
+  toAccountId?: string | null;
 }
 
 export async function getTransactions(
@@ -127,47 +217,30 @@ export async function getTransactions(
     offset?: number;
   }
 ): Promise<{ transactions: TransactionWithRelations[]; total: number }> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const where: any = {
-    householdId,
-    ...(options?.envelopeId
-      ? {
-          OR: [
-            { envelopeId: options.envelopeId },
-            { toEnvelopeId: options.envelopeId },
-          ],
-        }
-      : {}),
-    ...(options?.from || options?.to
-      ? {
-          date: {
-            ...(options.from ? { gte: options.from } : {}),
-            ...(options.to ? { lte: options.to } : {}),
-          },
-        }
-      : {}),
-  };
+  const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+  const url = new URL(`${baseUrl}/api/transactions`);
+  url.searchParams.set("householdId", householdId);
+  if (options?.envelopeId) url.searchParams.set("envelopeId", options.envelopeId);
+  if (options?.from) url.searchParams.set("from", options.from.toISOString());
+  if (options?.to) url.searchParams.set("to", options.to.toISOString());
+  if (options?.limit !== undefined) url.searchParams.set("limit", options.limit.toString());
+  if (options?.offset !== undefined) url.searchParams.set("offset", options.offset.toString());
 
-  const [transactions, total] = await Promise.all([
-    prisma.transaction.findMany({
-      where,
-      include: {
-        envelope: { select: { id: true, name: true } },
-        toEnvelope: { select: { id: true, name: true } },
-      },
-      orderBy: { date: "desc" },
-      take: options?.limit ?? 50,
-      skip: options?.offset ?? 0,
-    }),
-    prisma.transaction.count({ where }),
-  ]);
+  const res = await fetch(url.toString(), {
+    headers: { "x-household-id": householdId },
+    next: { tags: ["household_transactions"] },
+  });
+  
+  if (!res.ok) throw new Error("Failed to fetch transactions");
+  const data = await res.json();
 
+  // Convert date strings back to Date objects
   return {
-    transactions: transactions.map((t: typeof transactions[number]) => ({
+    transactions: data.transactions.map((t: any) => ({
       ...t,
-      type: t.type as "INCOME" | "EXPENSE" | "TRANSFER",
+      date: new Date(t.date),
     })),
-    total,
+    total: data.total,
   };
 }
 
@@ -232,6 +305,12 @@ export async function generateRecurringTransactions(): Promise<{
     }
   }
 
+  // Revalidate cache tags and paths if any transactions were generated
+  if (generated > 0) {
+    revalidateTag("household_transactions", "max");
+    revalidateTag("household_envelopes", "max");
+    revalidateTag("household_dashboard_summary", "max");
+  }
   revalidatePath("/transactions");
   revalidatePath("/budget");
   return { generated, errors };
