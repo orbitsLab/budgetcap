@@ -17,6 +17,9 @@ export async function getEnvelopeSetsWithDataDb(
   month: number,
   year: number
 ) {
+  const monthStart = new Date(year, month - 1, 1);
+  const monthEnd = new Date(year, month, 1);
+
   const sets = await prisma.envelopeSet.findMany({
     where: { householdId },
     orderBy: { position: "asc" },
@@ -28,13 +31,18 @@ export async function getEnvelopeSetsWithDataDb(
           allocations: {
             where: { month, year },
           },
+          // Outgoing: EXPENSE + TRANSFER where this is the source envelope
           transactions: {
             where: {
-              type: "EXPENSE",
-              date: {
-                gte: new Date(year, month - 1, 1),
-                lt: new Date(year, month, 1),
-              },
+              type: { in: ["EXPENSE", "TRANSFER"] },
+              date: { gte: monthStart, lt: monthEnd },
+            },
+          },
+          // Incoming: TRANSFER where this is the destination envelope
+          transfersTo: {
+            where: {
+              type: "TRANSFER",
+              date: { gte: monthStart, lt: monthEnd },
             },
           },
         },
@@ -51,12 +59,22 @@ export async function getEnvelopeSetsWithDataDb(
     startsOnDay: set.startsOnDay,
     envelopes: set.envelopes.map((env: any) => {
       const allocatedPaise = env.allocations[0]?.amountInPaise ?? 0;
+
+      // Sum expenses + outgoing transfers
       const spentPaise = env.transactions.reduce(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (sum: number, t: any) => sum + t.amountInPaise,
         0
       );
-      const availablePaise = allocatedPaise - spentPaise;
+
+      // Sum incoming transfers (money received into this envelope)
+      const receivedTransferPaise = env.transfersTo.reduce(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (sum: number, t: any) => sum + t.amountInPaise,
+        0
+      );
+
+      const availablePaise = allocatedPaise - spentPaise + receivedTransferPaise;
 
       return {
         id: env.id,
@@ -65,10 +83,12 @@ export async function getEnvelopeSetsWithDataDb(
         position: env.position,
         allocatedPaise,
         spentPaise,
+        receivedTransferPaise,
         availablePaise,
         isGoal: env.isGoal,
         goalAmountInPaise: env.goalAmountInPaise,
         goalDeadline: env.goalDeadline,
+        initialAmountInPaise: env.initialAmountInPaise ?? 0,
       };
     }),
   }));
@@ -81,7 +101,14 @@ export async function getEnvelopeRolloverDb(
 ): Promise<number> {
   const boundary = new Date(year, month - 1, 1);
 
-  const [allocationAgg, expenseAgg, incomeAgg] = await Promise.all([
+  const [
+    allocationAgg,
+    expenseAgg,
+    incomeAgg,
+    outgoingTransferAgg,
+    incomingTransferAgg,
+  ] = await Promise.all([
+    // All allocations before this month
     prisma.allocation.aggregate({
       where: {
         envelopeId,
@@ -92,6 +119,7 @@ export async function getEnvelopeRolloverDb(
       },
       _sum: { amountInPaise: true },
     }),
+    // Expenses from this envelope before this month
     prisma.transaction.aggregate({
       where: {
         envelopeId,
@@ -100,10 +128,29 @@ export async function getEnvelopeRolloverDb(
       },
       _sum: { amountInPaise: true },
     }),
+    // Income into this envelope before this month
     prisma.transaction.aggregate({
       where: {
         envelopeId,
         type: "INCOME",
+        date: { lt: boundary },
+      },
+      _sum: { amountInPaise: true },
+    }),
+    // Outgoing transfers FROM this envelope before this month
+    prisma.transaction.aggregate({
+      where: {
+        envelopeId,
+        type: "TRANSFER",
+        date: { lt: boundary },
+      },
+      _sum: { amountInPaise: true },
+    }),
+    // Incoming transfers TO this envelope before this month
+    prisma.transaction.aggregate({
+      where: {
+        toEnvelopeId: envelopeId,
+        type: "TRANSFER",
         date: { lt: boundary },
       },
       _sum: { amountInPaise: true },
@@ -113,8 +160,11 @@ export async function getEnvelopeRolloverDb(
   const totalAllocated = allocationAgg._sum.amountInPaise ?? 0;
   const totalSpent = expenseAgg._sum.amountInPaise ?? 0;
   const totalIncome = incomeAgg._sum.amountInPaise ?? 0;
+  const totalOutgoingTransfers = outgoingTransferAgg._sum.amountInPaise ?? 0;
+  const totalIncomingTransfers = incomingTransferAgg._sum.amountInPaise ?? 0;
 
-  return totalAllocated + totalIncome - totalSpent;
+  // Rollover = allocated + income received + incoming transfers - expenses - outgoing transfers
+  return totalAllocated + totalIncome + totalIncomingTransfers - totalSpent - totalOutgoingTransfers;
 }
 
 export async function getEnvelopeSetsWithRolloverDb(
@@ -130,7 +180,8 @@ export async function getEnvelopeSetsWithRolloverDb(
       envelopes: await Promise.all(
         set.envelopes.map(async (env: any) => {
           const rollover = await getEnvelopeRolloverDb(env.id, month, year);
-          const availablePaise = rollover + env.allocatedPaise - env.spentPaise;
+          // spentPaise includes outgoing transfers; receivedTransferPaise must be added back
+          const availablePaise = rollover + env.allocatedPaise - env.spentPaise + env.receivedTransferPaise;
           return { ...env, availablePaise };
         })
       ),
@@ -163,6 +214,7 @@ export async function getTransactionsDb(
   householdId: string,
   options?: {
     envelopeId?: string;
+    accountId?: string;
     from?: Date;
     to?: Date;
     limit?: number;
@@ -177,6 +229,14 @@ export async function getTransactionsDb(
           OR: [
             { envelopeId: options.envelopeId },
             { toEnvelopeId: options.envelopeId },
+          ],
+        }
+      : {}),
+    ...(options?.accountId
+      ? {
+          OR: [
+            { accountId: options.accountId },
+            { toAccountId: options.accountId },
           ],
         }
       : {}),

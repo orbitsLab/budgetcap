@@ -1,0 +1,405 @@
+# 📱 BudgetCap Mobile App — Implementation Plan
+### Stack: Expo · NativeWind · TypeScript
+
+---
+
+> [!IMPORTANT]
+> The mobile app will consume the **existing Next.js API routes** as a backend. No server code needs to be rewritten — only the frontend becomes React Native.
+
+---
+
+## Architecture Overview
+
+```mermaid
+graph TD
+    A[Expo App<br/>NativeWind + TypeScript] -->|HTTP / REST| B[Next.js API Routes<br/>Deployed on Vercel]
+    B --> C[(PostgreSQL<br/>via Prisma)]
+    A --> D[Expo SecureStore<br/>JWT Session Token]
+    A --> E[React Query<br/>Cache + Sync]
+```
+
+The app is a **separate package** inside a pnpm monorepo (already configured via `pnpm-workspace.yaml`). It calls the deployed Next.js API directly — no code sharing of server-only modules.
+
+---
+
+## Monorepo Structure
+
+```
+budgetcap/
+├── app/                    # Next.js web (existing)
+├── components/             # Web components (existing)
+├── lib/                    # Server-side logic (existing)
+├── prisma/                 # Shared schema (existing)
+├── mobile/                 # ← NEW Expo app
+│   ├── app/                # Expo Router v3 file-based routing
+│   │   ├── (auth)/
+│   │   │   ├── login.tsx
+│   │   │   └── register.tsx
+│   │   ├── (tabs)/
+│   │   │   ├── _layout.tsx        # Bottom tab navigator
+│   │   │   ├── index.tsx          # Dashboard / Budget
+│   │   │   ├── transactions.tsx   # Transactions list
+│   │   │   ├── accounts.tsx       # Accounts overview
+│   │   │   └── reports.tsx        # Reports & charts
+│   │   ├── envelope/[id].tsx      # Envelope detail
+│   │   ├── settings/
+│   │   │   ├── index.tsx
+│   │   │   ├── envelopes.tsx
+│   │   │   └── household.tsx
+│   │   └── _layout.tsx            # Root layout + auth guard
+│   ├── components/
+│   │   ├── ui/                    # Atomic: Button, Input, Card, Badge…
+│   │   ├── budget/                # EnvelopeCard, ToBudgetBar, GoalRing…
+│   │   ├── transactions/          # TransactionItem, AddTransactionSheet…
+│   │   └── shared/                # Header, BottomSheet, MonthPicker…
+│   ├── lib/
+│   │   ├── api-client.ts          # Typed fetch wrapper + base URL
+│   │   ├── auth.ts                # Login / register / token helpers
+│   │   ├── hooks/                 # useEnvelopes, useTransactions…
+│   │   └── utils.ts               # formatPaise, formatDate…
+│   ├── store/
+│   │   └── auth-store.ts          # Zustand store for session
+│   ├── constants/
+│   │   └── colors.ts              # Design tokens (mirrors web theme)
+│   ├── tailwind.config.js
+│   ├── babel.config.js
+│   ├── app.json
+│   └── package.json
+└── pnpm-workspace.yaml
+```
+
+---
+
+## Phase 1 — Project Bootstrap
+
+### 1.1 Initialize Expo App
+```bash
+cd budgetcap
+npx create-expo-app@latest mobile --template blank-typescript
+cd mobile
+```
+
+### 1.2 Install Core Dependencies
+```bash
+# Navigation
+npx expo install expo-router expo-status-bar expo-constants expo-linking expo-system-ui
+
+# NativeWind v4 + Tailwind
+npm install nativewind tailwindcss
+npm install --save-dev tailwindcss@3
+
+# State & Data Fetching
+npm install @tanstack/react-query zustand
+
+# Auth / Storage
+npx expo install expo-secure-store
+
+# UI Utilities
+npx expo install expo-haptics expo-image react-native-reanimated react-native-gesture-handler react-native-safe-area-context react-native-screens
+
+# Charts (Reports screen)
+npm install victory-native@next react-native-svg
+```
+
+### 1.3 Configure NativeWind v4
+```js
+// tailwind.config.js
+module.exports = {
+  content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
+  presets: [require("nativewind/preset")],
+  theme: {
+    extend: {
+      colors: {
+        primary: { DEFAULT: "#6366f1", dark: "#4f46e5" },
+        surface: { DEFAULT: "#1e1e2e", card: "#2a2a3e" },
+        // ... mirror web CSS variables
+      },
+    },
+  },
+};
+```
+
+### 1.4 Configure Expo Router
+```json
+// app.json
+{
+  "expo": {
+    "scheme": "budgetcap",
+    "plugins": ["expo-router"]
+  }
+}
+```
+
+---
+
+## Phase 2 — Authentication Layer
+
+### API Endpoints to Consume
+| Action | Web Route | Mobile Call |
+|--------|-----------|-------------|
+| Login | `POST /api/auth/signin` | `POST /api/auth/credentials` |
+| Register | `POST /api/auth/register` | Same |
+| Session check | `GET /api/auth/session` | Same (include cookie/token) |
+
+> [!NOTE]
+> NextAuth v5 uses cookies for session. The mobile app will need to handle session tokens manually via `expo-secure-store` and send a `Cookie` or `Authorization` header on every request.
+>
+> **Recommended:** Add a dedicated `POST /api/mobile/login` route to the Next.js app that returns a signed JWT the mobile client stores locally. This avoids the cookie complexity.
+
+### 2.1 Auth Store (Zustand)
+```ts
+// store/auth-store.ts
+interface AuthState {
+  token: string | null;
+  user: { id: string; name: string; email: string } | null;
+  householdId: string | null;
+  login: (token: string, user: User) => void;
+  logout: () => void;
+}
+```
+
+### 2.2 Login Screen
+- Email + Password fields
+- "Sign In" button with loading state
+- Link to Register
+- Show error toasts via `react-native-toast-message`
+
+### 2.3 Root Layout Auth Guard
+```tsx
+// app/_layout.tsx
+const { token } = useAuthStore();
+if (!token) return <Redirect href="/(auth)/login" />;
+```
+
+---
+
+## Phase 3 — Shared API Client
+
+```ts
+// lib/api-client.ts
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL; // https://budgetcap.vercel.app
+
+export async function apiFetch<T>(
+  path: string,
+  options?: RequestInit
+): Promise<T> {
+  const token = await SecureStore.getItemAsync("session_token");
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...options?.headers,
+    },
+  });
+  if (!res.ok) throw new APIError(res.status, await res.json());
+  return res.json();
+}
+```
+
+---
+
+## Phase 4 — Screen Implementation
+
+### 4.1 Dashboard / Budget Tab (`index.tsx`)
+
+**Web equivalent:** `/budget` page
+
+| Element | Native Implementation |
+|---------|----------------------|
+| Month selector | Horizontal `FlatList` of month chips, swipe gesture |
+| "To Budget" bar | Custom animated progress bar with `Animated.Value` |
+| Envelope Set accordion | `SectionList` with animated expand/collapse |
+| Envelope row | Swipeable row (gesture handler) → quick-edit on swipe |
+| Add Allocation FAB | `TouchableOpacity` floating button → bottom sheet |
+
+**Data:** `GET /api/envelopes?month=X&year=Y&householdId=Z`
+
+### 4.2 Transactions Tab (`transactions.tsx`)
+
+**Web equivalent:** `/transactions` page
+
+| Element | Native Implementation |
+|---------|----------------------|
+| Filter bar | Horizontal pill filter (All / Income / Expense / Transfer) |
+| Transaction list | `FlashList` (high-perf) grouped by date |
+| Add Transaction | FAB → `BottomSheet` with full form |
+| Search | `SearchBar` component, filters local list |
+| Swipe to delete | `react-native-gesture-handler` swipeable |
+
+**Data:** `GET /api/transactions?householdId=Z&limit=50&offset=0`
+
+### 4.3 Accounts Tab (`accounts.tsx`)
+
+**Web equivalent:** `/accounts` page
+
+| Element | Native Implementation |
+|---------|----------------------|
+| Account cards | Styled `FlatList` cards (Checking, Savings, Cash) |
+| Balance display | Large number with formatted paise → rupee |
+| Add Account | Bottom sheet form |
+
+### 4.4 Reports Tab (`reports.tsx`)
+
+**Web equivalent:** `/reports` page
+
+| Element | Native Implementation |
+|---------|----------------------|
+| Spending by envelope | Pie chart (`victory-native`) |
+| Monthly trend | Bar chart |
+| Date range picker | Custom month-range picker |
+
+### 4.5 Envelope Detail (`envelope/[id].tsx`)
+
+- Envelope name, goal progress ring (if `isGoal`)
+- Current month allocation + spent + available
+- Transaction history filtered to envelope
+- Edit allocation inline
+
+### 4.6 Settings (`settings/index.tsx`)
+
+- Profile (name, email, change password)
+- Household management
+- Envelope set management → `/settings/envelopes`
+- Theme toggle (dark/light)
+- Logout
+
+---
+
+## Phase 5 — UI Component Library
+
+Build mobile-native equivalents of the web shadcn components:
+
+| Web Component | Mobile Component | Notes |
+|--------------|-----------------|-------|
+| `<Button>` | `<Button>` | Pressable + haptic feedback |
+| `<Input>` | `<TextInput>` wrapper | Floating label animation |
+| `<Dialog>` | `<BottomSheet>` | Full-screen modal or half sheet |
+| `<Select>` | `<Picker>` / ActionSheet | iOS / Android native |
+| `<Badge>` | `<Badge>` | Pill with color variants |
+| `<Card>` | `<Card>` | Elevated surface with shadow |
+| `<Separator>` | `<View style border>` | Simple HR |
+| `<Toast>` | `react-native-toast-message` | Global toast provider |
+
+All components styled with **NativeWind** class strings.
+
+---
+
+## Phase 6 — Data Layer (React Query)
+
+```ts
+// lib/hooks/useEnvelopes.ts
+export function useEnvelopes(month: number, year: number) {
+  const { householdId } = useAuthStore();
+  return useQuery({
+    queryKey: ["envelopes", householdId, month, year],
+    queryFn: () => apiFetch(`/api/envelopes?householdId=${householdId}&month=${month}&year=${year}`),
+    staleTime: 1000 * 60 * 2, // 2 min
+  });
+}
+
+// lib/hooks/useTransactions.ts
+export function useTransactions(filters: TransactionFilters) { ... }
+
+// lib/hooks/useAccounts.ts
+export function useAccounts() { ... }
+```
+
+All mutations use `useMutation` with optimistic updates and cache invalidation.
+
+---
+
+## Phase 7 — Design System
+
+### Color Tokens (mirrors web)
+```ts
+// constants/colors.ts
+export const colors = {
+  primary: "#6366f1",
+  primaryDark: "#4f46e5",
+  background: "#0f0f1a",
+  surface: "#1a1a2e",
+  card: "#252540",
+  text: { primary: "#f0f0ff", secondary: "#9090b0", muted: "#5a5a7a" },
+  success: "#22c55e",
+  danger: "#ef4444",
+  warning: "#f59e0b",
+  income: "#10b981",
+  expense: "#f43f5e",
+  transfer: "#818cf8",
+};
+```
+
+### Typography
+- Font: **Inter** (via `expo-font` + `@expo-google-fonts/inter`)
+- Scale: xs(12) · sm(14) · base(16) · lg(18) · xl(20) · 2xl(24) · 3xl(30)
+
+### Animation Principles
+- Envelope rows: slide-in on mount (`react-native-reanimated`)
+- Balance changes: number ticker animation
+- Tab transitions: native stack slide
+- FAB: scale + rotate on press
+
+---
+
+## Phase 8 — Backend Additions (Next.js)
+
+A few small additions to the existing API are needed for mobile compatibility:
+
+| Addition | Reason |
+|----------|--------|
+| `POST /api/mobile/login` | Returns JWT instead of cookie session |
+| `POST /api/mobile/register` | Same, returns JWT |
+| `GET /api/mobile/me` | Returns current user + householdId from JWT |
+| Add `Authorization: Bearer` support to existing routes | Mobile can't reliably send cookies |
+
+These are **minimal** — add a middleware to `lib/auth-helpers.ts` that accepts either a session cookie (web) or a Bearer JWT (mobile).
+
+---
+
+## Phase 9 — Testing & Deployment
+
+### Testing
+- **Unit:** Jest + React Native Testing Library for components
+- **E2E:** Maestro or Detox for critical flows (login → add transaction)
+
+### Deployment
+- **Development:** `npx expo start` with Expo Go
+- **Preview builds:** `eas build --profile preview` (APK for Android)
+- **Production:** `eas build --profile production` → App Store / Play Store
+- **OTA updates:** `eas update` for JS-only changes
+
+---
+
+## Phased Delivery Timeline
+
+| Phase | Deliverable | Effort |
+|-------|-------------|--------|
+| 1 | Project bootstrap + NativeWind configured | 1–2h |
+| 2 | Auth screens (Login, Register) + token storage | 2–3h |
+| 3 | API client + React Query setup | 1–2h |
+| 4 | Dashboard / Budget tab (core feature) | 4–6h |
+| 5 | Transactions tab + Add Transaction sheet | 4–5h |
+| 6 | Accounts tab | 2–3h |
+| 7 | Reports tab (charts) | 3–4h |
+| 8 | Settings + Envelope management | 2–3h |
+| 9 | Polish: animations, haptics, error states | 2–3h |
+| 10 | EAS build + deploy to TestFlight / Play Store | 1–2h |
+
+**Total estimated effort: ~22–33 hours**
+
+---
+
+## Key Decisions & Trade-offs
+
+> [!NOTE]
+> **Why Expo Router v3?** File-based routing mirrors the Next.js App Router the web app already uses — same mental model, easier context switching.
+
+> [!TIP]
+> **NativeWind v4** uses the Tailwind compiler at build time, so class names are resolved to StyleSheet objects — no runtime overhead.
+
+> [!WARNING]
+> **Prisma cannot run on the mobile device.** All DB access must go through the Next.js API. The mobile app is a pure client.
+
+> [!CAUTION]
+> NextAuth v5 cookie sessions are httpOnly and not accessible from a native app's HTTP client. A dedicated JWT-based mobile auth endpoint must be added to the Next.js backend before the mobile app can authenticate.

@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Plus, RepeatIcon } from "lucide-react";
+import { Loader2, Plus, RepeatIcon, ArrowLeftRight, Layers } from "lucide-react";
 import { format } from "date-fns";
 
 interface EnvelopeOption {
@@ -38,6 +38,7 @@ interface AddTransactionDialogProps {
 }
 
 type TxType = "INCOME" | "EXPENSE" | "TRANSFER";
+type TransferSubType = "ACCOUNT" | "ENVELOPE";
 
 export function AddTransactionDialog({
   householdId,
@@ -50,6 +51,7 @@ export function AddTransactionDialog({
 
   // Form state
   const [type, setType] = useState<TxType>("EXPENSE");
+  const [transferSubType, setTransferSubType] = useState<TransferSubType>("ACCOUNT");
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [amount, setAmount] = useState("");
   const [payee, setPayee] = useState("");
@@ -67,10 +69,26 @@ export function AddTransactionDialog({
     const e: Record<string, string> = {};
     const paise = Math.round(parseFloat(amount) * 100);
     if (!amount || isNaN(paise) || paise <= 0) e.amount = "Enter a valid positive amount";
-    if (type !== "INCOME" && !envelopeId) e.envelope = "Select an envelope";
-    if (type === "TRANSFER" && !toEnvelopeId && !toAccountId) e.toEnvelope = "Select a destination";
-    if (type === "TRANSFER" && envelopeId === toEnvelopeId && accountId === toAccountId)
-      e.toEnvelope = "Source and destination must differ";
+
+    if (type === "EXPENSE") {
+      if (!envelopeId) e.envelope = "Select an envelope";
+    }
+
+    if (type === "TRANSFER") {
+      if (transferSubType === "ACCOUNT") {
+        if (!accountId || accountId === "none") e.account = "Select a source account";
+        if (!toAccountId || toAccountId === "none") e.toAccount = "Select a destination account";
+        if (accountId && toAccountId && accountId === toAccountId)
+          e.toAccount = "Source and destination accounts must differ";
+      } else {
+        // ENVELOPE transfer
+        if (!envelopeId) e.envelope = "Select a source envelope";
+        if (!toEnvelopeId) e.toEnvelope = "Select a destination envelope";
+        if (envelopeId && toEnvelopeId && envelopeId === toEnvelopeId)
+          e.toEnvelope = "Source and destination envelopes must differ";
+      }
+    }
+
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -80,6 +98,10 @@ export function AddTransactionDialog({
 
     const paise = Math.round(parseFloat(amount) * 100);
 
+    // Build payload based on type + subtype
+    const isAccountTransfer = type === "TRANSFER" && transferSubType === "ACCOUNT";
+    const isEnvelopeTransfer = type === "TRANSFER" && transferSubType === "ENVELOPE";
+
     startTransition(async () => {
       const result = await createTransaction({
         householdId,
@@ -88,10 +110,18 @@ export function AddTransactionDialog({
         amountInPaise: paise,
         payee: payee || undefined,
         notes: notes || undefined,
-        envelopeId: type === "INCOME" ? null : envelopeId || null,
-        toEnvelopeId: type === "TRANSFER" ? toEnvelopeId || null : null,
-        accountId: !accountId || accountId === "none" ? null : accountId,
-        toAccountId: type === "TRANSFER" && toAccountId !== "none" ? toAccountId || null : null,
+        envelopeId: isAccountTransfer ? null : (type === "INCOME" ? null : envelopeId || null),
+        toEnvelopeId: isEnvelopeTransfer ? toEnvelopeId || null : null,
+        accountId: isEnvelopeTransfer
+          ? null
+          : !accountId || accountId === "none"
+          ? null
+          : accountId,
+        toAccountId: isAccountTransfer
+          ? toAccountId && toAccountId !== "none"
+            ? toAccountId
+            : null
+          : null,
         isRecurring,
         recurringDayOfMonth: isRecurring ? parseInt(recurringDay) : null,
       });
@@ -109,6 +139,7 @@ export function AddTransactionDialog({
 
   function resetForm() {
     setType("EXPENSE");
+    setTransferSubType("ACCOUNT");
     setDate(format(new Date(), "yyyy-MM-dd"));
     setAmount("");
     setPayee("");
@@ -142,7 +173,7 @@ export function AddTransactionDialog({
           </DialogHeader>
 
           <div className="grid gap-4 py-2">
-            {/* Type */}
+            {/* Transaction Type */}
             <div className="space-y-1.5">
               <Label>Type</Label>
               <div className="flex gap-2">
@@ -163,6 +194,47 @@ export function AddTransactionDialog({
                 ))}
               </div>
             </div>
+
+            {/* Transfer Sub-Type Tabs */}
+            {type === "TRANSFER" && (
+              <div className="space-y-1.5">
+                <Label>Transfer Type</Label>
+                <div className="flex rounded-lg border border-border overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => { setTransferSubType("ACCOUNT"); setErrors({}); }}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-colors ${
+                      transferSubType === "ACCOUNT"
+                        ? "bg-primary text-primary-foreground"
+                        : "hover:bg-muted/50 text-muted-foreground"
+                    }`}
+                    id="tx-transfer-account-tab"
+                  >
+                    <ArrowLeftRight className="h-3.5 w-3.5" />
+                    Account Transfer
+                  </button>
+                  <div className="w-px bg-border" />
+                  <button
+                    type="button"
+                    onClick={() => { setTransferSubType("ENVELOPE"); setErrors({}); }}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-colors ${
+                      transferSubType === "ENVELOPE"
+                        ? "bg-primary text-primary-foreground"
+                        : "hover:bg-muted/50 text-muted-foreground"
+                    }`}
+                    id="tx-transfer-envelope-tab"
+                  >
+                    <Layers className="h-3.5 w-3.5" />
+                    Envelope Transfer
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {transferSubType === "ACCOUNT"
+                    ? "Move money between two bank/cash accounts."
+                    : "Reallocate budget between two envelopes."}
+                </p>
+              </div>
+            )}
 
             {/* Date + Amount */}
             <div className="grid grid-cols-2 gap-3">
@@ -198,33 +270,103 @@ export function AddTransactionDialog({
               </div>
             </div>
 
-            {/* Account(s) */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="tx-account">
-                  {type === "TRANSFER" ? "From Account" : "Account (Optional)"}
-                </Label>
-                <Select value={accountId} onValueChange={setAccountId}>
-                  <SelectTrigger id="tx-account">
-                    <SelectValue placeholder="Select account" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">-- None --</SelectItem>
-                    {accounts.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              {type === "TRANSFER" && (
+            {/* ── ACCOUNT TRANSFER FIELDS ── */}
+            {type === "TRANSFER" && transferSubType === "ACCOUNT" && (
+              <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="tx-to-account">To Account (Optional)</Label>
+                  <Label htmlFor="tx-account">From Account</Label>
+                  <Select value={accountId} onValueChange={setAccountId}>
+                    <SelectTrigger id="tx-account">
+                      <SelectValue placeholder="Select account" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {accounts.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {errors.account && (
+                    <p className="text-xs text-destructive">{errors.account}</p>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="tx-to-account">To Account</Label>
                   <Select value={toAccountId} onValueChange={setToAccountId}>
                     <SelectTrigger id="tx-to-account">
-                      <SelectValue placeholder="Select destination account" />
+                      <SelectValue placeholder="Select destination" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {accounts
+                        .filter((a) => a.id !== accountId)
+                        .map((a) => (
+                          <SelectItem key={a.id} value={a.id}>
+                            {a.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  {errors.toAccount && (
+                    <p className="text-xs text-destructive">{errors.toAccount}</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── ENVELOPE TRANSFER FIELDS ── */}
+            {type === "TRANSFER" && transferSubType === "ENVELOPE" && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="tx-envelope">From Envelope</Label>
+                  <Select value={envelopeId} onValueChange={setEnvelopeId}>
+                    <SelectTrigger id="tx-envelope">
+                      <SelectValue placeholder="Select envelope" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {envelopes.map((e) => (
+                        <SelectItem key={e.id} value={e.id}>
+                          {e.setName} → {e.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {errors.envelope && (
+                    <p className="text-xs text-destructive">{errors.envelope}</p>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="tx-to-envelope">To Envelope</Label>
+                  <Select value={toEnvelopeId} onValueChange={setToEnvelopeId}>
+                    <SelectTrigger id="tx-to-envelope">
+                      <SelectValue placeholder="Select destination" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {envelopes
+                        .filter((e) => e.id !== envelopeId)
+                        .map((e) => (
+                          <SelectItem key={e.id} value={e.id}>
+                            {e.setName} → {e.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  {errors.toEnvelope && (
+                    <p className="text-xs text-destructive">{errors.toEnvelope}</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── INCOME / EXPENSE FIELDS ── */}
+            {type !== "TRANSFER" && (
+              <>
+                {/* Account (optional) */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="tx-account">Account (Optional)</Label>
+                  <Select value={accountId} onValueChange={setAccountId}>
+                    <SelectTrigger id="tx-account">
+                      <SelectValue placeholder="Select account" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">-- None --</SelectItem>
@@ -236,54 +378,29 @@ export function AddTransactionDialog({
                     </SelectContent>
                   </Select>
                 </div>
-              )}
-            </div>
 
-            {/* Envelope(s) */}
-            {type !== "INCOME" && (
-              <div className="space-y-1.5">
-                <Label htmlFor="tx-envelope">
-                  {type === "TRANSFER" ? "From Envelope" : "Envelope"}
-                </Label>
-                <Select value={envelopeId} onValueChange={setEnvelopeId}>
-                  <SelectTrigger id="tx-envelope">
-                    <SelectValue placeholder="Select envelope" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {envelopes.map((e) => (
-                      <SelectItem key={e.id} value={e.id}>
-                        {e.setName} → {e.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {errors.envelope && (
-                  <p className="text-xs text-destructive">{errors.envelope}</p>
+                {/* Envelope (required for EXPENSE) */}
+                {type === "EXPENSE" && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="tx-envelope">Envelope</Label>
+                    <Select value={envelopeId} onValueChange={setEnvelopeId}>
+                      <SelectTrigger id="tx-envelope">
+                        <SelectValue placeholder="Select envelope" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {envelopes.map((e) => (
+                          <SelectItem key={e.id} value={e.id}>
+                            {e.setName} → {e.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {errors.envelope && (
+                      <p className="text-xs text-destructive">{errors.envelope}</p>
+                    )}
+                  </div>
                 )}
-              </div>
-            )}
-
-            {type === "TRANSFER" && (
-              <div className="space-y-1.5">
-                <Label htmlFor="tx-to-envelope">To Envelope</Label>
-                <Select value={toEnvelopeId} onValueChange={setToEnvelopeId}>
-                  <SelectTrigger id="tx-to-envelope">
-                    <SelectValue placeholder="Select destination" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {envelopes
-                      .filter((e) => e.id !== envelopeId)
-                      .map((e) => (
-                        <SelectItem key={e.id} value={e.id}>
-                          {e.setName} → {e.name}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-                {errors.toEnvelope && (
-                  <p className="text-xs text-destructive">{errors.toEnvelope}</p>
-                )}
-              </div>
+              </>
             )}
 
             {/* Payee + Notes */}

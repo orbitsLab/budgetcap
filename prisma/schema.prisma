@@ -137,6 +137,8 @@ model Envelope {
   goalAmountInPaise Int?
   /// Optional deadline for reaching the goal
   goalDeadline  DateTime?
+  /// Default amount to fill this envelope with each month (in paise)
+  initialAmountInPaise Int @default(0)
   createdAt     DateTime @default(now())
 
   envelopeSet  EnvelopeSet   @relation(fields: [envelopeSetId], references: [id], onDelete: Cascade)

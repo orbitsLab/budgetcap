@@ -57,13 +57,18 @@ export async function createTransaction(
     recurringDayOfMonth,
   } = parsed.data;
 
-  // Validate TRANSFER has both envelopes
+  // Validate TRANSFER: must have either envelope-to-envelope or account-to-account
   if (type === "TRANSFER") {
-    if (!envelopeId || !toEnvelopeId) {
-      return { error: "Transfer requires both source and destination envelopes." };
+    const hasEnvelopeTransfer = envelopeId && toEnvelopeId;
+    const hasAccountTransfer = accountId && toAccountId;
+    if (!hasEnvelopeTransfer && !hasAccountTransfer) {
+      return { error: "Transfer requires either source & destination envelopes, or source & destination accounts." };
     }
-    if (envelopeId === toEnvelopeId) {
+    if (envelopeId && toEnvelopeId && envelopeId === toEnvelopeId) {
       return { error: "Source and destination envelopes must be different." };
+    }
+    if (accountId && toAccountId && accountId === toAccountId) {
+      return { error: "Source and destination accounts must be different." };
     }
   }
 
@@ -126,13 +131,18 @@ export async function updateTransaction(
     recurringDayOfMonth,
   } = parsed.data;
 
-  // Validate TRANSFER has both envelopes
+  // Validate TRANSFER: must have either envelope-to-envelope or account-to-account
   if (type === "TRANSFER") {
-    if (!envelopeId || !toEnvelopeId) {
-      return { error: "Transfer requires both source and destination envelopes." };
+    const hasEnvelopeTransfer = envelopeId && toEnvelopeId;
+    const hasAccountTransfer = accountId && toAccountId;
+    if (!hasEnvelopeTransfer && !hasAccountTransfer) {
+      return { error: "Transfer requires either source & destination envelopes, or source & destination accounts." };
     }
-    if (envelopeId === toEnvelopeId) {
+    if (envelopeId && toEnvelopeId && envelopeId === toEnvelopeId) {
       return { error: "Source and destination envelopes must be different." };
+    }
+    if (accountId && toAccountId && accountId === toAccountId) {
+      return { error: "Source and destination accounts must be different." };
     }
   }
 
@@ -211,6 +221,7 @@ export async function getTransactions(
   householdId: string,
   options?: {
     envelopeId?: string;
+    accountId?: string;
     from?: Date;
     to?: Date;
     limit?: number;
@@ -221,6 +232,7 @@ export async function getTransactions(
   const url = new URL(`${baseUrl}/api/transactions`);
   url.searchParams.set("householdId", householdId);
   if (options?.envelopeId) url.searchParams.set("envelopeId", options.envelopeId);
+  if (options?.accountId) url.searchParams.set("accountId", options.accountId);
   if (options?.from) url.searchParams.set("from", options.from.toISOString());
   if (options?.to) url.searchParams.set("to", options.to.toISOString());
   if (options?.limit !== undefined) url.searchParams.set("limit", options.limit.toString());

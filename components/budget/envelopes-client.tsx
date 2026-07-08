@@ -44,6 +44,7 @@ interface EnvelopeData {
   position: number;
   isGoal?: boolean;
   goalAmountInPaise?: number | null;
+  initialAmountInPaise?: number;
 }
 
 interface EnvelopeSetData {
@@ -70,9 +71,11 @@ export function EnvelopesClient({ householdId, initialSets }: EnvelopesClientPro
 
   const [showNewEnvDialog, setShowNewEnvDialog] = useState(false);
   const [newEnvName, setNewEnvName] = useState("");
+  const [newEnvInitialAmount, setNewEnvInitialAmount] = useState("");
   const [newEnvSetId, setNewEnvSetId] = useState<string>("");
   const [editingEnv, setEditingEnv] = useState<EnvelopeData | null>(null);
   const [editEnvName, setEditEnvName] = useState("");
+  const [editEnvInitialAmount, setEditEnvInitialAmount] = useState("");
 
   const [goalEnv, setGoalEnv] = useState<EnvelopeData | null>(null);
   const [goalAmount, setGoalAmount] = useState("");
@@ -134,14 +137,16 @@ export function EnvelopesClient({ householdId, initialSets }: EnvelopesClientPro
   // ── Envelope Actions ──
   function handleCreateEnvelope() {
     if (!newEnvName.trim() || !newEnvSetId) return;
+    const initialPaise = Math.round(parseFloat(newEnvInitialAmount || "0") * 100);
     startTransition(async () => {
-      const r = await createEnvelope(newEnvSetId, newEnvName.trim());
+      const r = await createEnvelope(newEnvSetId, newEnvName.trim(), initialPaise);
       if ("error" in r) {
         toast.error(r.error);
       } else {
         toast.success("Envelope created");
         setShowNewEnvDialog(false);
         setNewEnvName("");
+        setNewEnvInitialAmount("");
         if (r.id) {
           setSets((prev) =>
             prev.map((s) =>
@@ -155,6 +160,7 @@ export function EnvelopesClient({ householdId, initialSets }: EnvelopesClientPro
                         name: newEnvName.trim(),
                         isArchived: false,
                         position: s.envelopes.length,
+                        initialAmountInPaise: initialPaise,
                       },
                     ],
                   }
@@ -168,14 +174,17 @@ export function EnvelopesClient({ householdId, initialSets }: EnvelopesClientPro
 
   function handleUpdateEnvelope() {
     if (!editingEnv || !editEnvName.trim()) return;
+    const initialPaise = Math.round(parseFloat(editEnvInitialAmount || "0") * 100);
     startTransition(async () => {
-      await updateEnvelope(editingEnv.id, editEnvName.trim());
+      await updateEnvelope(editingEnv.id, editEnvName.trim(), initialPaise);
       toast.success("Updated");
       setSets((prev) =>
         prev.map((s) => ({
           ...s,
           envelopes: s.envelopes.map((e) =>
-            e.id === editingEnv.id ? { ...e, name: editEnvName.trim() } : e
+            e.id === editingEnv.id
+              ? { ...e, name: editEnvName.trim(), initialAmountInPaise: initialPaise }
+              : e
           ),
         }))
       );
@@ -382,14 +391,21 @@ export function EnvelopesClient({ householdId, initialSets }: EnvelopesClientPro
                           <ChevronDown className="h-3 w-3" />
                         </Button>
                       </div>
-                      <span className="flex-1 text-sm text-foreground truncate min-w-0">
-                        {env.name}
-                        {env.isArchived && (
-                          <span className="ml-2 text-xs text-muted-foreground italic shrink-0">
-                            (archived)
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <span className="text-sm text-foreground truncate">
+                          {env.name}
+                          {env.isArchived && (
+                            <span className="ml-2 text-xs text-muted-foreground italic">
+                              (archived)
+                            </span>
+                          )}
+                        </span>
+                        {!!env.initialAmountInPaise && (
+                          <span className="text-[11px] text-muted-foreground">
+                            Monthly: ₹{(env.initialAmountInPaise / 100).toFixed(2)}
                           </span>
                         )}
-                      </span>
+                      </div>
                       <div className="flex items-center gap-1 shrink-0">
                         <Button
                           variant="ghost"
@@ -398,6 +414,11 @@ export function EnvelopesClient({ householdId, initialSets }: EnvelopesClientPro
                           onClick={() => {
                             setEditingEnv(env);
                             setEditEnvName(env.name);
+                            setEditEnvInitialAmount(
+                              env.initialAmountInPaise
+                                ? (env.initialAmountInPaise / 100).toFixed(2)
+                                : ""
+                            );
                           }}
                         >
                           <Pencil className="h-3.5 w-3.5" />
@@ -504,23 +525,45 @@ export function EnvelopesClient({ householdId, initialSets }: EnvelopesClientPro
       </Dialog>
 
       {/* New Envelope */}
-      <Dialog open={showNewEnvDialog} onOpenChange={setShowNewEnvDialog}>
+      <Dialog open={showNewEnvDialog} onOpenChange={(o) => { setShowNewEnvDialog(o); if (!o) { setNewEnvName(""); setNewEnvInitialAmount(""); } }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>New Envelope</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2 py-2">
-            <Input
-              id="new-envelope-name-input"
-              placeholder="e.g. Rent"
-              value={newEnvName}
-              onChange={(e) => setNewEnvName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleCreateEnvelope()}
-              autoFocus
-            />
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Name</label>
+              <Input
+                id="new-envelope-name-input"
+                placeholder="e.g. Rent"
+                value={newEnvName}
+                onChange={(e) => setNewEnvName(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">
+                Monthly Amount
+                <span className="ml-1 text-xs text-muted-foreground font-normal">(default fill amount)</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₹</span>
+                <Input
+                  id="new-envelope-amount-input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={newEnvInitialAmount}
+                  onChange={(e) => setNewEnvInitialAmount(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleCreateEnvelope()}
+                  className="pl-7"
+                />
+              </div>
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowNewEnvDialog(false)}>
+            <Button variant="outline" onClick={() => { setShowNewEnvDialog(false); setNewEnvName(""); setNewEnvInitialAmount(""); }}>
               Cancel
             </Button>
             <Button onClick={handleCreateEnvelope} disabled={isPending || !newEnvName.trim()} id="create-envelope-confirm-btn">
@@ -536,14 +579,37 @@ export function EnvelopesClient({ householdId, initialSets }: EnvelopesClientPro
           <DialogHeader>
             <DialogTitle>Edit Envelope</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2 py-2">
-            <Input
-              id="edit-envelope-name-input"
-              value={editEnvName}
-              onChange={(e) => setEditEnvName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleUpdateEnvelope()}
-              autoFocus
-            />
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Name</label>
+              <Input
+                id="edit-envelope-name-input"
+                value={editEnvName}
+                onChange={(e) => setEditEnvName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleUpdateEnvelope()}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">
+                Monthly Amount
+                <span className="ml-1 text-xs text-muted-foreground font-normal">(default fill amount)</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₹</span>
+                <Input
+                  id="edit-envelope-amount-input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={editEnvInitialAmount}
+                  onChange={(e) => setEditEnvInitialAmount(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleUpdateEnvelope()}
+                  className="pl-7"
+                />
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingEnv(null)}>

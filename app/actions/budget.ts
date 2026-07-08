@@ -20,6 +20,7 @@ export interface EnvelopeWithData {
   isGoal: boolean;
   goalAmountInPaise: number | null;
   goalDeadline: Date | null;
+  initialAmountInPaise: number; // default fill amount
 }
 
 export interface EnvelopeSetWithData {
@@ -172,6 +173,78 @@ export async function saveAllocation(
 }
 
 // ─────────────────────────────────────────────────────────
+// Fill Envelopes — Add All / Set All
+// ─────────────────────────────────────────────────────────
+
+/**
+ * Updates the default (initial) fill amount for an envelope.
+ * This is the amount that will be pre-filled when the user clicks Add or Set.
+ */
+export async function updateEnvelopeInitialAmount(
+  envelopeId: string,
+  amountInPaise: number
+): Promise<SaveAllocationResult> {
+  await requireAuth();
+
+  if (!envelopeId || amountInPaise < 0) return { error: "Invalid data." };
+
+  await prisma.envelope.update({
+    where: { id: envelopeId },
+    data: { initialAmountInPaise: amountInPaise },
+  });
+
+  revalidateTag("household_envelopes", "max");
+  revalidatePath("/budget");
+  return { success: true };
+}
+
+export type FillMode = "add" | "set";
+
+/**
+ * Bulk fills all envelopes using their initialAmountInPaise.
+ * - "add": adds the initial amount ON TOP of whatever is already allocated
+ * - "set": sets the allocation to exactly the initial amount (replaces)
+ */
+export async function fillAllEnvelopes(
+  envelopeIds: string[],
+  month: number,
+  year: number,
+  mode: FillMode
+): Promise<SaveAllocationResult> {
+  await requireAuth();
+
+  if (envelopeIds.length === 0) return { success: true };
+
+  // Fetch current initial amounts and existing allocations in one go
+  const envelopes = await prisma.envelope.findMany({
+    where: { id: { in: envelopeIds } },
+    include: {
+      allocations: { where: { month, year } },
+    },
+  });
+
+  await prisma.$transaction(
+    envelopes.map((env: typeof envelopes[number]) => {
+      const existing = env.allocations[0]?.amountInPaise ?? 0;
+      const initial = env.initialAmountInPaise;
+      const newAmount = mode === "add" ? existing + initial : initial;
+
+      return prisma.allocation.upsert({
+        where: { envelopeId_month_year: { envelopeId: env.id, month, year } },
+        update: { amountInPaise: newAmount },
+        create: { envelopeId: env.id, month, year, amountInPaise: newAmount },
+      });
+    })
+  );
+
+  revalidateTag("household_envelopes", "max");
+  revalidateTag("household_dashboard_summary", "max");
+  revalidatePath("/budget");
+  return { success: true };
+}
+
+
+// ─────────────────────────────────────────────────────────
 // Envelope Set / Envelope CRUD
 // ─────────────────────────────────────────────────────────
 
@@ -247,17 +320,27 @@ export async function updateEnvelopeSetSettings(
 const envelopeSchema = z.object({
   name: z.string().min(1).max(100),
   envelopeSetId: z.string().cuid(),
+  initialAmountInPaise: z.number().int().min(0).default(0),
 });
 
-export async function createEnvelope(envelopeSetId: string, name: string) {
+export async function createEnvelope(
+  envelopeSetId: string,
+  name: string,
+  initialAmountInPaise: number = 0
+) {
   await requireAuth();
-  const parsed = envelopeSchema.safeParse({ name, envelopeSetId });
+  const parsed = envelopeSchema.safeParse({ name, envelopeSetId, initialAmountInPaise });
   if (!parsed.success) return { error: "Invalid data." };
 
   const count = await prisma.envelope.count({ where: { envelopeSetId } });
 
   const envelope = await prisma.envelope.create({
-    data: { name: parsed.data.name, envelopeSetId, position: count },
+    data: {
+      name: parsed.data.name,
+      envelopeSetId,
+      position: count,
+      initialAmountInPaise: parsed.data.initialAmountInPaise,
+    },
   });
 
   // Revalidate tags & paths
@@ -268,10 +351,20 @@ export async function createEnvelope(envelopeSetId: string, name: string) {
   return { success: true, id: envelope.id };
 }
 
-export async function updateEnvelope(id: string, name: string) {
+export async function updateEnvelope(
+  id: string,
+  name: string,
+  initialAmountInPaise?: number
+) {
   await requireAuth();
-  await prisma.envelope.update({ where: { id }, data: { name } });
-  
+  await prisma.envelope.update({
+    where: { id },
+    data: {
+      name,
+      ...(initialAmountInPaise !== undefined ? { initialAmountInPaise } : {}),
+    },
+  });
+
   // Revalidate tags & paths
   revalidateTag("household_envelopes", "max");
   revalidatePath("/envelopes");

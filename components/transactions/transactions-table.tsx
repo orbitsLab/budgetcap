@@ -45,6 +45,7 @@ interface TransactionsTableProps {
   accounts: AccountWithBalance[];
   initialFilters?: {
     envelopeId?: string;
+    accountId?: string;
     from?: string;
     to?: string;
     page?: string;
@@ -76,6 +77,7 @@ export function TransactionsTable({
 
   // Filters
   const [filterEnvelope, setFilterEnvelope] = useState(initialFilters?.envelopeId ?? "all");
+  const [filterAccount, setFilterAccount] = useState(initialFilters?.accountId ?? "all");
   const [filterFrom, setFilterFrom] = useState(initialFilters?.from ?? "");
   const [filterTo, setFilterTo] = useState(initialFilters?.to ?? "");
 
@@ -86,6 +88,7 @@ export function TransactionsTable({
 
   useEffect(() => {
     setFilterEnvelope(initialFilters?.envelopeId ?? "all");
+    setFilterAccount(initialFilters?.accountId ?? "all");
     setFilterFrom(initialFilters?.from ?? "");
     setFilterTo(initialFilters?.to ?? "");
     setPage(initialFilters?.page ? parseInt(initialFilters.page, 10) : 0);
@@ -93,10 +96,13 @@ export function TransactionsTable({
 
   const totalPages = Math.ceil(initialTotal / PAGE_SIZE);
 
-  const applyFilters = (envelopeId: string, from: string, to: string, newPage: number) => {
+  const applyFilters = (envelopeId: string, accountId: string, from: string, to: string, newPage: number) => {
     const params = new URLSearchParams();
     if (envelopeId && envelopeId !== "all") {
       params.set("envelopeId", envelopeId);
+    }
+    if (accountId && accountId !== "all") {
+      params.set("accountId", accountId);
     }
     if (from) {
       params.set("from", from);
@@ -138,7 +144,7 @@ export function TransactionsTable({
                 onChange={(e) => {
                   const val = e.target.value;
                   setFilterFrom(val);
-                  applyFilters(filterEnvelope, val, filterTo, 0);
+                  applyFilters(filterEnvelope, filterAccount, val, filterTo, 0);
                 }}
                 className="h-9 sm:h-8 flex-1 sm:w-36 text-xs"
                 id="filter-from-date"
@@ -151,7 +157,7 @@ export function TransactionsTable({
                 onChange={(e) => {
                   const val = e.target.value;
                   setFilterTo(val);
-                  applyFilters(filterEnvelope, filterFrom, val, 0);
+                  applyFilters(filterEnvelope, filterAccount, filterFrom, val, 0);
                 }}
                 className="h-9 sm:h-8 flex-1 sm:w-36 text-xs"
                 id="filter-to-date"
@@ -164,10 +170,10 @@ export function TransactionsTable({
               value={filterEnvelope}
               onValueChange={(val) => {
                 setFilterEnvelope(val);
-                applyFilters(val, filterFrom, filterTo, 0);
+                applyFilters(val, filterAccount, filterFrom, filterTo, 0);
               }}
             >
-              <SelectTrigger className="h-9 sm:h-8 w-full sm:w-48 text-xs" id="filter-envelope">
+              <SelectTrigger className="h-9 sm:h-8 w-full sm:w-40 text-xs" id="filter-envelope">
                 <SelectValue placeholder="All envelopes" />
               </SelectTrigger>
               <SelectContent>
@@ -175,6 +181,27 @@ export function TransactionsTable({
                 {envelopes.map((e) => (
                   <SelectItem key={e.id} value={e.id}>
                     {e.setName} → {e.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Account filter */}
+            <Select
+              value={filterAccount}
+              onValueChange={(val) => {
+                setFilterAccount(val);
+                applyFilters(filterEnvelope, val, filterFrom, filterTo, 0);
+              }}
+            >
+              <SelectTrigger className="h-9 sm:h-8 w-full sm:w-40 text-xs" id="filter-account">
+                <SelectValue placeholder="All accounts" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All accounts</SelectItem>
+                {accounts.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -382,7 +409,7 @@ export function TransactionsTable({
               onClick={() => {
                 const newP = Math.max(0, page - 1);
                 setPage(newP);
-                applyFilters(filterEnvelope, filterFrom, filterTo, newP);
+                applyFilters(filterEnvelope, filterAccount, filterFrom, filterTo, newP);
               }}
               disabled={page === 0}
             >
@@ -395,7 +422,7 @@ export function TransactionsTable({
               onClick={() => {
                 const newP = Math.min(totalPages - 1, page + 1);
                 setPage(newP);
-                applyFilters(filterEnvelope, filterFrom, filterTo, newP);
+                applyFilters(filterEnvelope, filterAccount, filterFrom, filterTo, newP);
               }}
               disabled={page >= totalPages - 1}
             >

@@ -11,6 +11,7 @@ export async function GET(request: Request) {
     }
 
     const envelopeId = searchParams.get("envelopeId") || undefined;
+    const accountId = searchParams.get("accountId") || undefined;
     const fromStr = searchParams.get("from");
     const toStr = searchParams.get("to");
     const limit = parseInt(searchParams.get("limit") || "50", 10);
@@ -21,6 +22,7 @@ export async function GET(request: Request) {
 
     const data = await getTransactionsDb(householdId, {
       envelopeId,
+      accountId,
       from,
       to,
       limit,

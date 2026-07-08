@@ -14,6 +14,7 @@ export const metadata: Metadata = { title: "Transactions" };
 interface PageProps {
   searchParams: Promise<{
     envelopeId?: string;
+    accountId?: string;
     from?: string;
     to?: string;
     page?: string;
@@ -23,7 +24,7 @@ interface PageProps {
 async function TransactionsContent({
   searchParams,
 }: {
-  searchParams: { envelopeId?: string; from?: string; to?: string; page?: string };
+  searchParams: { envelopeId?: string; accountId?: string; from?: string; to?: string; page?: string };
 }) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
@@ -44,6 +45,7 @@ async function TransactionsContent({
       limit: 25,
       offset,
       envelopeId: searchParams.envelopeId,
+      accountId: searchParams.accountId,
       from: fromDate,
       to: toDate,
     }),
