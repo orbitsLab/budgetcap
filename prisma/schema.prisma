@@ -1,0 +1,163 @@
+// This is your Prisma schema file
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────
+// AUTH
+// ─────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  householdMembers HouseholdMember[]
+  ownedHouseholds  Household[]       @relation("HouseholdOwner")
+
+  // NextAuth.js sessions (credentials-only, no OAuth sessions needed)
+  sessions Session[]
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────────────────
+// HOUSEHOLD
+// ─────────────────────────────────────────────────────────
+
+model Household {
+  id        String   @id @default(cuid())
+  name      String
+  ownerId   String
+  createdAt DateTime @default(now())
+
+  owner   User              @relation("HouseholdOwner", fields: [ownerId], references: [id])
+  members HouseholdMember[]
+
+  envelopeSets EnvelopeSet[]
+  transactions Transaction[]
+}
+
+model HouseholdMember {
+  householdId String
+  userId      String
+  role        MemberRole @default(MEMBER)
+  joinedAt    DateTime   @default(now())
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([householdId, userId])
+}
+
+enum MemberRole {
+  OWNER
+  MEMBER
+}
+
+// ─────────────────────────────────────────────────────────
+// ENVELOPE BUDGETING
+// ─────────────────────────────────────────────────────────
+
+model EnvelopeSet {
+  id          String   @id @default(cuid())
+  householdId String
+  name        String
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  household Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  envelopes Envelope[]
+
+  @@index([householdId, position])
+}
+
+model Envelope {
+  id            String   @id @default(cuid())
+  envelopeSetId String
+  name          String
+  isArchived    Boolean  @default(false)
+  position      Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  envelopeSet  EnvelopeSet   @relation(fields: [envelopeSetId], references: [id], onDelete: Cascade)
+  allocations  Allocation[]
+  transactions Transaction[]
+  transfersTo  Transaction[] @relation("TransferToEnvelope")
+
+  @@index([envelopeSetId, position])
+}
+
+/// Monthly budget allocation for an envelope.
+/// amountInPaise: integer representing paise (₹1 = 100 paise)
+model Allocation {
+  id            String @id @default(cuid())
+  envelopeId    String
+  /// 1–12
+  month         Int
+  /// e.g. 2025
+  year          Int
+  /// Stored in paise (never floats). ₹10.50 → 1050
+  amountInPaise Int    @default(0)
+
+  envelope Envelope @relation(fields: [envelopeId], references: [id], onDelete: Cascade)
+
+  @@unique([envelopeId, month, year])
+  @@index([envelopeId, year, month])
+}
+
+/// Financial transaction (income, expense, or transfer).
+/// amountInPaise: always positive; type determines direction.
+model Transaction {
+  id          String          @id @default(cuid())
+  householdId String
+  envelopeId  String?
+  /// For TRANSFER: the destination envelope
+  toEnvelopeId String?
+  date        DateTime
+  /// INCOME | EXPENSE | TRANSFER
+  type        TransactionType
+  /// Stored in paise (never floats)
+  amountInPaise Int
+  payee       String?
+  notes       String?
+
+  // Recurring transaction support (Step 5)
+  isRecurring        Boolean @default(false)
+  /// Day of month to auto-generate (1–28)
+  recurringDayOfMonth Int?
+  /// Track which transactions were auto-generated from a recurring template
+  recurringParentId  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  envelope    Envelope? @relation(fields: [envelopeId], references: [id], onDelete: SetNull)
+  toEnvelope  Envelope? @relation("TransferToEnvelope", fields: [toEnvelopeId], references: [id], onDelete: SetNull)
+
+  @@index([householdId, date])
+  @@index([envelopeId, date])
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+  TRANSFER
+}
