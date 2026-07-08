@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { deleteTransaction } from "@/app/actions/transactions";
 import type { TransactionWithRelations } from "@/app/actions/transactions";
+import type { AccountWithBalance } from "@/app/actions/accounts";
 import { formatINR } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import {
@@ -39,6 +40,7 @@ interface TransactionsTableProps {
   total: number;
   householdId: string;
   envelopes: EnvelopeOption[];
+  accounts: AccountWithBalance[];
   initialFilters?: {
     envelopeId?: string;
     from?: string;
@@ -59,6 +61,7 @@ export function TransactionsTable({
   total: initialTotal,
   householdId,
   envelopes,
+  accounts,
   initialFilters,
 }: TransactionsTableProps) {
   const [transactions, setTransactions] = useState(initialTransactions);
@@ -123,7 +126,7 @@ export function TransactionsTable({
             </SelectContent>
           </Select>
         </div>
-        <AddTransactionDialog householdId={householdId} envelopes={envelopes} />
+        <AddTransactionDialog householdId={householdId} envelopes={envelopes} accounts={accounts} />
       </div>
 
       {/* Table */}

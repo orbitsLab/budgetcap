@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { createTransaction } from "@/app/actions/transactions";
+import type { AccountWithBalance } from "@/app/actions/accounts";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +33,7 @@ interface EnvelopeOption {
 interface AddTransactionDialogProps {
   householdId: string;
   envelopes: EnvelopeOption[];
+  accounts: AccountWithBalance[];
   onSuccess?: () => void;
 }
 
@@ -40,6 +42,7 @@ type TxType = "INCOME" | "EXPENSE" | "TRANSFER";
 export function AddTransactionDialog({
   householdId,
   envelopes,
+  accounts,
   onSuccess,
 }: AddTransactionDialogProps) {
   const [open, setOpen] = useState(false);
@@ -53,6 +56,8 @@ export function AddTransactionDialog({
   const [notes, setNotes] = useState("");
   const [envelopeId, setEnvelopeId] = useState("");
   const [toEnvelopeId, setToEnvelopeId] = useState("");
+  const [accountId, setAccountId] = useState("");
+  const [toAccountId, setToAccountId] = useState("");
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurringDay, setRecurringDay] = useState("1");
 
@@ -63,8 +68,8 @@ export function AddTransactionDialog({
     const paise = Math.round(parseFloat(amount) * 100);
     if (!amount || isNaN(paise) || paise <= 0) e.amount = "Enter a valid positive amount";
     if (type !== "INCOME" && !envelopeId) e.envelope = "Select an envelope";
-    if (type === "TRANSFER" && !toEnvelopeId) e.toEnvelope = "Select a destination envelope";
-    if (type === "TRANSFER" && envelopeId === toEnvelopeId)
+    if (type === "TRANSFER" && !toEnvelopeId && !toAccountId) e.toEnvelope = "Select a destination";
+    if (type === "TRANSFER" && envelopeId === toEnvelopeId && accountId === toAccountId)
       e.toEnvelope = "Source and destination must differ";
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -85,6 +90,8 @@ export function AddTransactionDialog({
         notes: notes || undefined,
         envelopeId: type === "INCOME" ? null : envelopeId || null,
         toEnvelopeId: type === "TRANSFER" ? toEnvelopeId || null : null,
+        accountId: !accountId || accountId === "none" ? null : accountId,
+        toAccountId: type === "TRANSFER" && toAccountId !== "none" ? toAccountId || null : null,
         isRecurring,
         recurringDayOfMonth: isRecurring ? parseInt(recurringDay) : null,
       });
@@ -108,6 +115,8 @@ export function AddTransactionDialog({
     setNotes("");
     setEnvelopeId("");
     setToEnvelopeId("");
+    setAccountId("");
+    setToAccountId("");
     setIsRecurring(false);
     setRecurringDay("1");
     setErrors({});
@@ -187,6 +196,47 @@ export function AddTransactionDialog({
                   <p className="text-xs text-destructive">{errors.amount}</p>
                 )}
               </div>
+            </div>
+
+            {/* Account(s) */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="tx-account">
+                  {type === "TRANSFER" ? "From Account" : "Account (Optional)"}
+                </Label>
+                <Select value={accountId} onValueChange={setAccountId}>
+                  <SelectTrigger id="tx-account">
+                    <SelectValue placeholder="Select account" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">-- None --</SelectItem>
+                    {accounts.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {type === "TRANSFER" && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="tx-to-account">To Account (Optional)</Label>
+                  <Select value={toAccountId} onValueChange={setToAccountId}>
+                    <SelectTrigger id="tx-to-account">
+                      <SelectValue placeholder="Select destination account" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">-- None --</SelectItem>
+                      {accounts.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
 
             {/* Envelope(s) */}

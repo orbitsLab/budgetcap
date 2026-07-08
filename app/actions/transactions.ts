@@ -18,6 +18,8 @@ const transactionSchema = z.object({
   notes: z.string().max(1000).optional(),
   envelopeId: z.string().cuid().optional().nullable(),
   toEnvelopeId: z.string().cuid().optional().nullable(), // TRANSFER destination
+  accountId: z.string().cuid().optional().nullable(),
+  toAccountId: z.string().cuid().optional().nullable(),
   isRecurring: z.boolean().optional().default(false),
   recurringDayOfMonth: z.number().int().min(1).max(28).optional().nullable(),
 });
@@ -49,6 +51,8 @@ export async function createTransaction(
     notes,
     envelopeId,
     toEnvelopeId,
+    accountId,
+    toAccountId,
     isRecurring,
     recurringDayOfMonth,
   } = parsed.data;
@@ -73,6 +77,8 @@ export async function createTransaction(
       notes: notes || null,
       envelopeId: envelopeId || null,
       toEnvelopeId: type === "TRANSFER" ? toEnvelopeId || null : null,
+      accountId: accountId || null,
+      toAccountId: type === "TRANSFER" ? toAccountId || null : null,
       isRecurring: isRecurring ?? false,
       recurringDayOfMonth: isRecurring ? recurringDayOfMonth ?? null : null,
     },
@@ -209,6 +215,8 @@ export async function generateRecurringTransactions(): Promise<{
           householdId: template.householdId,
           envelopeId: template.envelopeId,
           toEnvelopeId: template.toEnvelopeId,
+          accountId: template.accountId,
+          toAccountId: template.toAccountId,
           type: template.type,
           date: today,
           amountInPaise: template.amountInPaise,

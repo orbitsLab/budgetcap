@@ -12,6 +12,7 @@ import {
   archiveEnvelope,
   reorderEnvelopeSets,
   reorderEnvelopes,
+  toggleGoal,
 } from "@/app/actions/budget";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ import {
   ChevronDown,
   Loader2,
   FolderPlus,
+  Target,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +42,8 @@ interface EnvelopeData {
   name: string;
   isArchived: boolean;
   position: number;
+  isGoal?: boolean;
+  goalAmountInPaise?: number | null;
 }
 
 interface EnvelopeSetData {
@@ -70,6 +74,10 @@ export function EnvelopesClient({ householdId, initialSets }: EnvelopesClientPro
   const [editingEnv, setEditingEnv] = useState<EnvelopeData | null>(null);
   const [editEnvName, setEditEnvName] = useState("");
 
+  const [goalEnv, setGoalEnv] = useState<EnvelopeData | null>(null);
+  const [goalAmount, setGoalAmount] = useState("");
+  const [isGoalEnabled, setIsGoalEnabled] = useState(false);
+
   // ── Envelope Set Actions ──
   function handleCreateSet() {
     if (!newSetName.trim()) return;
@@ -81,11 +89,12 @@ export function EnvelopesClient({ householdId, initialSets }: EnvelopesClientPro
         toast.success("Envelope set created");
         setShowNewSetDialog(false);
         setNewSetName("");
-        // Optimistic add
-        setSets((prev) => [
-          ...prev,
-          { id: `temp-${Date.now()}`, name: newSetName.trim(), position: prev.length, envelopes: [] },
-        ]);
+        if (r.id) {
+          setSets((prev) => [
+            ...prev,
+            { id: r.id, name: newSetName.trim(), position: prev.length, envelopes: [] },
+          ]);
+        }
       }
     });
   }
@@ -133,24 +142,26 @@ export function EnvelopesClient({ householdId, initialSets }: EnvelopesClientPro
         toast.success("Envelope created");
         setShowNewEnvDialog(false);
         setNewEnvName("");
-        setSets((prev) =>
-          prev.map((s) =>
-            s.id === newEnvSetId
-              ? {
-                  ...s,
-                  envelopes: [
-                    ...s.envelopes,
-                    {
-                      id: `temp-${Date.now()}`,
-                      name: newEnvName.trim(),
-                      isArchived: false,
-                      position: s.envelopes.length,
-                    },
-                  ],
-                }
-              : s
-          )
-        );
+        if (r.id) {
+          setSets((prev) =>
+            prev.map((s) =>
+              s.id === newEnvSetId
+                ? {
+                    ...s,
+                    envelopes: [
+                      ...s.envelopes,
+                      {
+                        id: r.id,
+                        name: newEnvName.trim(),
+                        isArchived: false,
+                        position: s.envelopes.length,
+                      },
+                    ],
+                  }
+                : s
+            )
+          );
+        }
       }
     });
   }
@@ -211,6 +222,26 @@ export function EnvelopesClient({ householdId, initialSets }: EnvelopesClientPro
     setSets((prev) => prev.map((s) => (s.id === setId ? { ...s, envelopes: envs } : s)));
     startTransition(async () => {
       await reorderEnvelopes(envs.map((e, i) => ({ id: e.id, position: i })));
+    });
+  }
+
+  function handleSaveGoal() {
+    if (!goalEnv) return;
+    startTransition(async () => {
+      const parsedAmount = Math.round(parseFloat(goalAmount || "0") * 100);
+      await toggleGoal(goalEnv.id, isGoalEnabled, parsedAmount > 0 ? parsedAmount : null);
+      toast.success("Goal settings saved");
+      setSets((prev) =>
+        prev.map((s) => ({
+          ...s,
+          envelopes: s.envelopes.map((e) =>
+            e.id === goalEnv.id
+              ? { ...e, isGoal: isGoalEnabled, goalAmountInPaise: parsedAmount }
+              : e
+          ),
+        }))
+      );
+      setGoalEnv(null);
     });
   }
 
@@ -374,6 +405,19 @@ export function EnvelopesClient({ householdId, initialSets }: EnvelopesClientPro
                         <Button
                           variant="ghost"
                           size="icon"
+                          className={cn("h-7 w-7", env.isGoal ? "text-primary" : "")}
+                          onClick={() => {
+                            setGoalEnv(env);
+                            setIsGoalEnabled(env.isGoal || false);
+                            setGoalAmount(env.goalAmountInPaise ? (env.goalAmountInPaise / 100).toFixed(2) : "");
+                          }}
+                          title="Goal Settings"
+                        >
+                          <Target className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           className="h-7 w-7"
                           onClick={() => handleArchiveEnvelope(env)}
                           disabled={isPending}
@@ -507,6 +551,57 @@ export function EnvelopesClient({ householdId, initialSets }: EnvelopesClientPro
             </Button>
             <Button onClick={handleUpdateEnvelope} disabled={isPending} id="save-envelope-btn">
               Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Edit Goal Settings */}
+      <Dialog open={!!goalEnv} onOpenChange={(o) => !o && setGoalEnv(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Goal Settings: {goalEnv?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="is-goal-checkbox"
+                checked={isGoalEnabled}
+                onChange={(e) => setIsGoalEnabled(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+              />
+              <label htmlFor="is-goal-checkbox" className="text-sm font-medium">
+                Make this a savings goal
+              </label>
+            </div>
+            
+            {isGoalEnabled && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Target Amount</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                    ₹
+                  </span>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={goalAmount}
+                    onChange={(e) => setGoalAmount(e.target.value)}
+                    className="pl-7"
+                    autoFocus
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGoalEnv(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveGoal} disabled={isPending}>
+              Save Goal
             </Button>
           </DialogFooter>
         </DialogContent>

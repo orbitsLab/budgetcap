@@ -10,12 +10,14 @@ import {
   FolderOpen,
   X,
   IndianRupee,
+  Landmark,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
   { href: "/budget", label: "Budget", icon: LayoutDashboard },
+  { href: "/accounts", label: "Accounts", icon: Landmark },
   { href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
   { href: "/envelopes", label: "Envelopes", icon: FolderOpen },
   { href: "/reports", label: "Reports", icon: BarChart3 },

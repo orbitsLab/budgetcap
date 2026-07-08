@@ -52,6 +52,7 @@ model Household {
 
   envelopeSets EnvelopeSet[]
   transactions Transaction[]
+  accounts     Account[]
 }
 
 model HouseholdMember {
@@ -72,17 +73,53 @@ enum MemberRole {
 }
 
 // ─────────────────────────────────────────────────────────
+// ACCOUNTS (Checking, Savings, Cash)
+// ─────────────────────────────────────────────────────────
+
+/// A real-world financial account (bank account, cash, savings, etc.)
+model Account {
+  id          String      @id @default(cuid())
+  householdId String
+  name        String      // e.g. "Primary Account", "Savings", "Cash Jar"
+  type        AccountType
+  /// Opening / initial balance in paise
+  openingBalanceInPaise Int     @default(0)
+  isDefault   Boolean     @default(false)
+  position    Int         @default(0)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  household    Household     @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  envelopeSets EnvelopeSet[] // sections linked to this account
+  transactions Transaction[] @relation("TransactionAccount")
+  toTransactions Transaction[] @relation("TransactionToAccount")
+
+  @@index([householdId, position])
+}
+
+enum AccountType {
+  CHECKING
+  SAVINGS
+  CASH
+}
+
+// ─────────────────────────────────────────────────────────
 // ENVELOPE BUDGETING
 // ─────────────────────────────────────────────────────────
 
 model EnvelopeSet {
   id          String   @id @default(cuid())
   householdId String
+  /// Optional link to a real Account (e.g. "Monthly (Primary)")
+  accountId   String?
   name        String
   position    Int      @default(0)
+  /// Day of month this budget section starts (1–28), default 1st
+  startsOnDay Int      @default(1)
   createdAt   DateTime @default(now())
 
   household Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  account   Account?   @relation(fields: [accountId], references: [id], onDelete: SetNull)
   envelopes Envelope[]
 
   @@index([householdId, position])
@@ -94,6 +131,12 @@ model Envelope {
   name          String
   isArchived    Boolean  @default(false)
   position      Int      @default(0)
+  /// If true, this envelope is a savings Goal (not a monthly spend category)
+  isGoal        Boolean  @default(false)
+  /// Target amount for this goal in paise (null = no goal set)
+  goalAmountInPaise Int?
+  /// Optional deadline for reaching the goal
+  goalDeadline  DateTime?
   createdAt     DateTime @default(now())
 
   envelopeSet  EnvelopeSet   @relation(fields: [envelopeSetId], references: [id], onDelete: Cascade)
@@ -130,6 +173,10 @@ model Transaction {
   envelopeId  String?
   /// For TRANSFER: the destination envelope
   toEnvelopeId String?
+  /// Account this transaction was made from (optional)
+  accountId    String?
+  /// For account-to-account transfers: the destination account
+  toAccountId  String?
   date        DateTime
   /// INCOME | EXPENSE | TRANSFER
   type        TransactionType
@@ -138,7 +185,7 @@ model Transaction {
   payee       String?
   notes       String?
 
-  // Recurring transaction support (Step 5)
+  // Recurring transaction support
   isRecurring        Boolean @default(false)
   /// Day of month to auto-generate (1–28)
   recurringDayOfMonth Int?
@@ -151,9 +198,12 @@ model Transaction {
   household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
   envelope    Envelope? @relation(fields: [envelopeId], references: [id], onDelete: SetNull)
   toEnvelope  Envelope? @relation("TransferToEnvelope", fields: [toEnvelopeId], references: [id], onDelete: SetNull)
+  account     Account?  @relation("TransactionAccount", fields: [accountId], references: [id], onDelete: SetNull)
+  toAccount   Account?  @relation("TransactionToAccount", fields: [toAccountId], references: [id], onDelete: SetNull)
 
   @@index([householdId, date])
   @@index([envelopeId, date])
+  @@index([accountId, date])
 }
 
 enum TransactionType {

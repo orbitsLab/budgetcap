@@ -6,6 +6,7 @@ import {
   getEnvelopeSetsWithRollover,
   getTotalIncome,
 } from "@/app/actions/budget";
+import { getAccounts } from "@/app/actions/accounts";
 import { BudgetClient } from "@/components/budget/budget-client";
 import { BudgetSkeleton } from "@/components/budget/budget-skeleton";
 import type { Metadata } from "next";
@@ -28,9 +29,10 @@ async function BudgetContent() {
   const month = now.getMonth() + 1;
   const year = now.getFullYear();
 
-  const [envelopeSets, totalIncome] = await Promise.all([
+  const [envelopeSets, totalIncome, accounts] = await Promise.all([
     getEnvelopeSetsWithRollover(member.householdId, month, year),
     getTotalIncome(member.householdId, month, year),
+    getAccounts(member.householdId),
   ]);
 
   return (
@@ -39,6 +41,7 @@ async function BudgetContent() {
       totalIncomePaise={totalIncome}
       month={month}
       year={year}
+      accounts={accounts}
     />
   );
 }

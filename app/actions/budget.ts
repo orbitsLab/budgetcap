@@ -17,12 +17,17 @@ export interface EnvelopeWithData {
   allocatedPaise: number;   // from Allocation this month
   spentPaise: number;       // from Transactions this month
   availablePaise: number;   // rollover + allocated - spent
+  isGoal: boolean;
+  goalAmountInPaise: number | null;
+  goalDeadline: Date | null;
 }
 
 export interface EnvelopeSetWithData {
   id: string;
   name: string;
   position: number;
+  accountId: string | null;
+  startsOnDay: number;
   envelopes: EnvelopeWithData[];
 }
 
@@ -69,6 +74,8 @@ export async function getEnvelopeSetsWithData(
     id: set.id,
     name: set.name,
     position: set.position,
+    accountId: set.accountId,
+    startsOnDay: set.startsOnDay,
     envelopes: set.envelopes.map((env: any) => {
       const allocatedPaise = env.allocations[0]?.amountInPaise ?? 0;
       const spentPaise = env.transactions.reduce(
@@ -92,6 +99,9 @@ export async function getEnvelopeSetsWithData(
         allocatedPaise,
         spentPaise,
         availablePaise,
+        isGoal: env.isGoal,
+        goalAmountInPaise: env.goalAmountInPaise,
+        goalDeadline: env.goalDeadline,
       };
     }),
   }));
@@ -261,13 +271,13 @@ export async function createEnvelopeSet(householdId: string, name: string) {
     where: { householdId },
   });
 
-  await prisma.envelopeSet.create({
+  const set = await prisma.envelopeSet.create({
     data: { name: parsed.data.name, householdId, position: count },
   });
 
   revalidatePath("/envelopes");
   revalidatePath("/budget");
-  return { success: true };
+  return { success: true, id: set.id };
 }
 
 export async function updateEnvelopeSet(id: string, name: string) {
@@ -286,6 +296,23 @@ export async function deleteEnvelopeSet(id: string) {
   return { success: true };
 }
 
+export async function updateEnvelopeSetSettings(
+  id: string,
+  settings: { accountId?: string | null; startsOnDay?: number }
+) {
+  await requireAuth();
+  await prisma.envelopeSet.update({
+    where: { id },
+    data: {
+      accountId: settings.accountId,
+      startsOnDay: settings.startsOnDay,
+    },
+  });
+  revalidatePath("/envelopes");
+  revalidatePath("/budget");
+  return { success: true };
+}
+
 const envelopeSchema = z.object({
   name: z.string().min(1).max(100),
   envelopeSetId: z.string().cuid(),
@@ -298,13 +325,13 @@ export async function createEnvelope(envelopeSetId: string, name: string) {
 
   const count = await prisma.envelope.count({ where: { envelopeSetId } });
 
-  await prisma.envelope.create({
+  const envelope = await prisma.envelope.create({
     data: { name: parsed.data.name, envelopeSetId, position: count },
   });
 
   revalidatePath("/envelopes");
   revalidatePath("/budget");
-  return { success: true };
+  return { success: true, id: envelope.id };
 }
 
 export async function updateEnvelope(id: string, name: string) {
@@ -318,6 +345,22 @@ export async function updateEnvelope(id: string, name: string) {
 export async function archiveEnvelope(id: string, isArchived: boolean) {
   await requireAuth();
   await prisma.envelope.update({ where: { id }, data: { isArchived } });
+  revalidatePath("/envelopes");
+  revalidatePath("/budget");
+  return { success: true };
+}
+
+export async function toggleGoal(
+  id: string,
+  isGoal: boolean,
+  goalAmountInPaise: number | null = null,
+  goalDeadline: Date | null = null
+) {
+  await requireAuth();
+  await prisma.envelope.update({
+    where: { id },
+    data: { isGoal, goalAmountInPaise, goalDeadline },
+  });
   revalidatePath("/envelopes");
   revalidatePath("/budget");
   return { success: true };

@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getTransactions } from "@/app/actions/transactions";
+import { getAccounts } from "@/app/actions/accounts";
 import { TransactionsTable } from "@/components/transactions/transactions-table";
 import { TransactionsSkeleton } from "@/components/transactions/transactions-skeleton";
 import type { Metadata } from "next";
@@ -19,9 +20,10 @@ async function TransactionsContent() {
   });
   if (!member) redirect("/register");
 
-  const { transactions, total } = await getTransactions(member.householdId, {
-    limit: 25,
-  });
+  const [{ transactions, total }, accounts] = await Promise.all([
+    getTransactions(member.householdId, { limit: 25 }),
+    getAccounts(member.householdId),
+  ]);
 
   // Fetch all envelopes for the add dialog + filter dropdown
   const envelopeSets = await prisma.envelopeSet.findMany({
@@ -57,6 +59,7 @@ async function TransactionsContent() {
         total={total}
         householdId={member.householdId}
         envelopes={envelopes}
+        accounts={accounts}
       />
     </div>
   );

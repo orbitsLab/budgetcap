@@ -8,11 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import Link from "next/link";
 
+import type { AccountWithBalance } from "@/app/actions/accounts";
+
 interface BudgetClientProps {
   envelopeSets: EnvelopeSetWithData[];
   totalIncomePaise: number;
   month: number;
   year: number;
+  accounts: AccountWithBalance[];
 }
 
 export function BudgetClient({
@@ -20,6 +23,7 @@ export function BudgetClient({
   totalIncomePaise,
   month,
   year,
+  accounts,
 }: BudgetClientProps) {
   // Optimistic total allocated — starts from actual DB values
   const initialAllocated = envelopeSets
@@ -65,6 +69,7 @@ export function BudgetClient({
         envelopeSets={envelopeSets}
         month={month}
         year={year}
+        accounts={accounts}
         onAllocatedChange={handleAllocatedChange}
       />
     </div>
