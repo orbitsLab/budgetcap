@@ -14,6 +14,12 @@ export function paiseToRupeeString(paise: number): string {
   return (paise / 100).toFixed(2);
 }
 
-export function rupeesToPaise(rupees: number): number {
+export function rupeesToPaise(rupees: number | string): number {
+  if (typeof rupees === "string") {
+    const cleaned = rupees.replace(/[^0-9.]/g, "");
+    const parsed = parseFloat(cleaned);
+    if (isNaN(parsed) || parsed < 0) return 0;
+    return Math.round(parsed * 100);
+  }
   return Math.round(rupees * 100);
 }

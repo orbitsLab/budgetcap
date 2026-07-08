@@ -75,7 +75,7 @@ export function AddAccountDialog({
 
     setIsSubmitting(true);
     try {
-      const openingBalanceInPaise = rupeesToPaise(openingBalance);
+      const openingBalanceInPaise = rupeesToPaise(balanceFloat);
 
       if (accountToEdit) {
         const result = await updateAccount(accountToEdit.id, {
