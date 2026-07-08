@@ -1,6 +1,25 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
+import { verifyToken } from "@/lib/jwt";
+
+/**
+ * Extracts and verifies the user ID from the request headers (Bearer token) or session.
+ */
+export async function getUserIdFromRequest(req: Request): Promise<string | null> {
+  const authHeader = req.headers.get("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.substring(7);
+    const decoded = verifyToken(token);
+    if (decoded?.userId) {
+      return decoded.userId;
+    }
+  }
+
+  // Fallback to cookie-based session
+  const session = await auth();
+  return session?.user?.id || null;
+}
 
 /**
  * Returns the current authenticated session or redirects to /login.
@@ -10,6 +29,7 @@ export async function requireAuth() {
   if (!session?.user?.id) redirect("/login");
   return session;
 }
+
 
 /**
  * Returns the current user's primary Household.
