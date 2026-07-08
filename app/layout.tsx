@@ -16,11 +16,11 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    template: "%s | GoodBudget",
-    default: "GoodBudget — Envelope Budgeting for India",
+    template: "%s | Budgetcap",
+    default: "Budgetcap — Zero-Based Envelope Budgeting",
   },
   description:
-    "Take control of your finances with GoodBudget — a zero-based envelope budgeting app built for Indian Rupees.",
+    "Take control of your finances with Budgetcap — a zero-based envelope budgeting app built for Indian Rupees.",
 };
 
 export default function RootLayout({

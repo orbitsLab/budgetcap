@@ -1,6 +1,6 @@
-# 🪙 Goodbudget Clone — Zero-Based Envelope Budgeting App
+# 🪙 Budgetcap — Zero-Based Envelope Budgeting App
 
-Goodbudget Clone is a modern, full-stack personal finance and budgeting application built on the principles of **Zero-Based Envelope Budgeting**. It helps households plan their spending, allocate funds to specific categories (envelopes), track real-time balances, and manage accounts and transactions in a shared household environment.
+Budgetcap is a modern, full-stack personal finance and budgeting application built on the principles of **Zero-Based Envelope Budgeting**. It helps households plan their spending, allocate funds to specific categories (envelopes), track real-time balances, and manage accounts and transactions in a shared household environment.
 
 Designed for multi-user collaboration within a household, this application features a sleek responsive UI with light/dark theme support, smooth drag-and-drop budget organizing, and decimal-free currency calculations to ensure high precision and reliability.
 
@@ -137,7 +137,7 @@ Ensure you have the following installed on your machine:
 Clone the repository and install the dependencies:
 ```bash
 git clone <repository-url>
-cd goodbudget
+cd budgetcap
 pnpm install # or npm install
 ```
 
@@ -145,7 +145,7 @@ pnpm install # or npm install
 Create a `.env` file in the root directory:
 ```env
 # PostgreSQL connection string
-DATABASE_URL="postgresql://username:password@localhost:5432/goodbudget"
+DATABASE_URL="postgresql://postgres:12345678@localhost:5432/budgetcap"
 
 # Cryptographically strong secret key for NextAuth.js
 AUTH_SECRET="your-generated-super-secret-key"

@@ -105,7 +105,7 @@ export function Sidebar({ householdName, isOpen, onClose }: SidebarProps) {
         {/* Footer */}
         <div className="border-t border-border px-5 py-4">
           <p className="text-xs text-muted-foreground text-center">
-            GoodBudget · Zero-Based Budgeting
+            Budgetcap · Zero-Based Budgeting
           </p>
         </div>
       </aside>
