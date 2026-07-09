@@ -256,6 +256,8 @@ export async function getTransactionsDb(
       include: {
         envelope: { select: { id: true, name: true } },
         toEnvelope: { select: { id: true, name: true } },
+        account: { select: { id: true, name: true } },
+        toAccount: { select: { id: true, name: true } },
       },
       orderBy: { date: "desc" },
       take: options?.limit ?? 50,

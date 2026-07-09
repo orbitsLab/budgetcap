@@ -13,48 +13,52 @@ export async function PUT(
     }
 
     const { id } = await params;
-    const account = await prisma.account.findUnique({
+    const envelope = await prisma.envelope.findUnique({
       where: { id },
+      include: {
+        envelopeSet: true,
+      },
     });
 
-    if (!account) {
-      return NextResponse.json({ error: "Account not found" }, { status: 404 });
+    if (!envelope) {
+      return NextResponse.json({ error: "Envelope not found" }, { status: 404 });
     }
 
     // Verify user belongs to household
     const member = await prisma.householdMember.findFirst({
-      where: { userId, householdId: account.householdId }
+      where: { userId, householdId: envelope.envelopeSet.householdId },
     });
     if (!member) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
     const data = await request.json();
-    const { name, type, openingBalanceInPaise, isDefault } = data;
+    const { name, envelopeSetId, initialAmountInPaise, isArchived, isGoal, goalAmountInPaise, goalDeadline } = data;
 
-    if (isDefault) {
-      await prisma.$transaction([
-        prisma.account.updateMany({
-          where: { householdId: account.householdId },
-          data: { isDefault: false },
-        }),
-        prisma.account.update({
-          where: { id },
-          data: { isDefault: true },
-        }),
-      ]);
+    // If changing envelope set, verify the new set belongs to the same household
+    if (envelopeSetId && envelopeSetId !== envelope.envelopeSetId) {
+      const newSet = await prisma.envelopeSet.findUnique({
+        where: { id: envelopeSetId },
+      });
+      if (!newSet || newSet.householdId !== envelope.envelopeSet.householdId) {
+        return NextResponse.json({ error: "Invalid target envelope set" }, { status: 400 });
+      }
     }
 
-    const updatedAccount = await prisma.account.update({
+    const updated = await prisma.envelope.update({
       where: { id },
       data: {
         ...(name !== undefined && { name }),
-        ...(type !== undefined && { type }),
-        ...(openingBalanceInPaise !== undefined && { openingBalanceInPaise }),
+        ...(envelopeSetId !== undefined && { envelopeSetId }),
+        ...(initialAmountInPaise !== undefined && { initialAmountInPaise }),
+        ...(isArchived !== undefined && { isArchived }),
+        ...(isGoal !== undefined && { isGoal }),
+        ...(goalAmountInPaise !== undefined && { goalAmountInPaise }),
+        ...(goalDeadline !== undefined && { goalDeadline: goalDeadline ? new Date(goalDeadline) : null }),
       },
     });
 
-    return NextResponse.json({ success: true, account: updatedAccount });
+    return NextResponse.json({ success: true, envelope: updated });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
   }
@@ -71,35 +75,26 @@ export async function DELETE(
     }
 
     const { id } = await params;
-    const account = await prisma.account.findUnique({
+    const envelope = await prisma.envelope.findUnique({
       where: { id },
+      include: {
+        envelopeSet: true,
+      },
     });
 
-    if (!account) {
-      return NextResponse.json({ error: "Account not found" }, { status: 404 });
+    if (!envelope) {
+      return NextResponse.json({ error: "Envelope not found" }, { status: 404 });
     }
 
     // Verify user belongs to household
     const member = await prisma.householdMember.findFirst({
-      where: { userId, householdId: account.householdId }
+      where: { userId, householdId: envelope.envelopeSet.householdId },
     });
     if (!member) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    // Guard: cannot delete if it has transactions
-    const txCount = await prisma.transaction.count({
-      where: { OR: [{ accountId: id }, { toAccountId: id }] },
-    });
-
-    if (txCount > 0) {
-      return NextResponse.json(
-        { error: `Cannot delete: this account has ${txCount} transaction(s). Remove them first.` },
-        { status: 400 }
-      );
-    }
-
-    await prisma.account.delete({
+    await prisma.envelope.delete({
       where: { id },
     });
 

@@ -13,48 +13,35 @@ export async function PUT(
     }
 
     const { id } = await params;
-    const account = await prisma.account.findUnique({
+    const envelopeSet = await prisma.envelopeSet.findUnique({
       where: { id },
     });
 
-    if (!account) {
-      return NextResponse.json({ error: "Account not found" }, { status: 404 });
+    if (!envelopeSet) {
+      return NextResponse.json({ error: "Envelope set not found" }, { status: 404 });
     }
 
     // Verify user belongs to household
     const member = await prisma.householdMember.findFirst({
-      where: { userId, householdId: account.householdId }
+      where: { userId, householdId: envelopeSet.householdId },
     });
     if (!member) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
     const data = await request.json();
-    const { name, type, openingBalanceInPaise, isDefault } = data;
+    const { name, accountId, startsOnDay } = data;
 
-    if (isDefault) {
-      await prisma.$transaction([
-        prisma.account.updateMany({
-          where: { householdId: account.householdId },
-          data: { isDefault: false },
-        }),
-        prisma.account.update({
-          where: { id },
-          data: { isDefault: true },
-        }),
-      ]);
-    }
-
-    const updatedAccount = await prisma.account.update({
+    const updated = await prisma.envelopeSet.update({
       where: { id },
       data: {
         ...(name !== undefined && { name }),
-        ...(type !== undefined && { type }),
-        ...(openingBalanceInPaise !== undefined && { openingBalanceInPaise }),
+        ...(accountId !== undefined && { accountId }),
+        ...(startsOnDay !== undefined && { startsOnDay }),
       },
     });
 
-    return NextResponse.json({ success: true, account: updatedAccount });
+    return NextResponse.json({ success: true, envelopeSet: updated });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
   }
@@ -71,35 +58,23 @@ export async function DELETE(
     }
 
     const { id } = await params;
-    const account = await prisma.account.findUnique({
+    const envelopeSet = await prisma.envelopeSet.findUnique({
       where: { id },
     });
 
-    if (!account) {
-      return NextResponse.json({ error: "Account not found" }, { status: 404 });
+    if (!envelopeSet) {
+      return NextResponse.json({ error: "Envelope set not found" }, { status: 404 });
     }
 
     // Verify user belongs to household
     const member = await prisma.householdMember.findFirst({
-      where: { userId, householdId: account.householdId }
+      where: { userId, householdId: envelopeSet.householdId },
     });
     if (!member) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    // Guard: cannot delete if it has transactions
-    const txCount = await prisma.transaction.count({
-      where: { OR: [{ accountId: id }, { toAccountId: id }] },
-    });
-
-    if (txCount > 0) {
-      return NextResponse.json(
-        { error: `Cannot delete: this account has ${txCount} transaction(s). Remove them first.` },
-        { status: 400 }
-      );
-    }
-
-    await prisma.account.delete({
+    await prisma.envelopeSet.delete({
       where: { id },
     });
 
