@@ -135,14 +135,14 @@ function EnvelopeSetCard({
         <div className="divide-y divide-border border-t border-border">
           {/* Column headers */}
           {!isGoalSet ? (
-            <div className="hidden sm:grid grid-cols-[1fr_140px_120px_100px] gap-2 px-4 py-2 bg-muted/30 text-xs font-medium text-muted-foreground">
+            <div className="hidden sm:grid grid-cols-[1fr_180px_100px_100px] gap-2 px-4 py-2 bg-muted/30 text-xs font-medium text-muted-foreground">
               <span>Envelope</span>
               <span className="text-right">Allocated (₹)</span>
               <span className="text-right">Spent</span>
               <span className="text-right">Available</span>
             </div>
           ) : (
-            <div className="hidden sm:grid grid-cols-[1fr_140px_120px] gap-4 px-4 py-2 bg-muted/30 text-xs font-medium text-muted-foreground">
+            <div className="hidden sm:grid grid-cols-[1fr_180px_100px] gap-4 px-4 py-2 bg-muted/30 text-xs font-medium text-muted-foreground">
               <span>Goal</span>
               <span className="text-right">Save This Month (₹)</span>
               <span className="text-right">Saved</span>
@@ -236,7 +236,7 @@ function EnvelopeRow({
   const isOverspent = env.spentPaise > allocatedPaise;
 
   return (
-    <div className="flex flex-col sm:grid sm:grid-cols-[1fr_140px_120px_100px] gap-2 sm:gap-2 items-stretch sm:items-center px-4 py-3 sm:py-2.5 hover:bg-muted/20 transition-colors group">
+    <div className="flex flex-col sm:grid sm:grid-cols-[1fr_180px_100px_100px] gap-2 sm:gap-2 items-stretch sm:items-center px-4 py-3 sm:py-2.5 hover:bg-muted/20 transition-colors group">
       <div className="flex items-center justify-between gap-2 sm:contents">
         <div className="flex flex-col gap-1 min-w-0 pr-0 sm:pr-4 flex-1">
           <span className="text-sm text-foreground font-medium truncate">{env.name}</span>
@@ -260,9 +260,19 @@ function EnvelopeRow({
         </div>
 
         <div className="flex items-center justify-end sm:contents">
-          <div className="flex flex-col items-end gap-1.5 w-28 sm:w-32">
-            <div className="relative w-full">
-              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">₹</span>
+          <div className="flex items-center rounded-lg border border-input bg-background shadow-xs hover:border-ring focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all overflow-hidden w-full max-w-[180px] sm:w-[180px]">
+            <Button
+              type="button"
+              onClick={handleQuickAdd}
+              disabled={isPending || !fillValue || isNaN(parseFloat(fillValue)) || parseFloat(fillValue) <= 0}
+              variant="ghost"
+              className="h-8 px-2.5 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/60 rounded-none border-r border-border disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+              title={`Add amount to ${env.name}`}
+            >
+              Add
+            </Button>
+            <div className="relative flex-1 min-w-0">
+              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs font-medium pointer-events-none">₹</span>
               <input
                 id={`fill-input-${env.id}`}
                 type="number"
@@ -270,34 +280,25 @@ function EnvelopeRow({
                 step="0.01"
                 value={fillValue}
                 onChange={(e) => setFillValue(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleQuickSet()}
                 disabled={isPending}
                 className={cn(
-                  "w-full rounded-md border border-input bg-background pl-5 sm:pl-6 pr-2 py-1 text-sm text-right",
-                  "focus:outline-none focus:ring-1 focus:ring-ring",
-                  "disabled:opacity-50 transition-opacity",
+                  "w-full bg-transparent pl-5 pr-2 py-1 text-sm font-medium text-right text-foreground focus:outline-none disabled:opacity-50 transition-opacity",
                   isPending && "opacity-60"
                 )}
                 aria-label={`Fill amount for ${env.name}`}
               />
             </div>
-            <div className="flex gap-1.5">
-              <Button
-                onClick={handleQuickAdd}
-                disabled={isPending || !fillValue || isNaN(parseFloat(fillValue)) || parseFloat(fillValue) <= 0}
-                variant="outline"
-                className="h-6 px-2 text-[10px] bg-background border-border hover:bg-muted text-foreground font-medium"
-              >
-                Add
-              </Button>
-              <Button
-                onClick={handleQuickSet}
-                disabled={isPending || !fillValue || isNaN(parseFloat(fillValue)) || parseFloat(fillValue) < 0}
-                variant="outline"
-                className="h-6 px-2 text-[10px] bg-background border-border hover:bg-muted text-foreground font-medium"
-              >
-                Set
-              </Button>
-            </div>
+            <Button
+              type="button"
+              onClick={handleQuickSet}
+              disabled={isPending || !fillValue || isNaN(parseFloat(fillValue)) || parseFloat(fillValue) < 0}
+              variant="ghost"
+              className="h-8 px-2.5 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/60 rounded-none border-l border-border disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+              title={`Set amount for ${env.name}`}
+            >
+              Set
+            </Button>
           </div>
         </div>
       </div>
@@ -382,7 +383,7 @@ function GoalEnvelopeRow({
   const progressPercent = target > 0 ? Math.min(100, Math.max(0, (currentAvailable / target) * 100)) : 0;
 
   return (
-    <div className="flex flex-col sm:grid sm:grid-cols-[1fr_140px_120px] gap-3 sm:gap-4 items-stretch sm:items-center px-4 py-3 hover:bg-muted/20 transition-colors group">
+    <div className="flex flex-col sm:grid sm:grid-cols-[1fr_180px_100px] gap-3 sm:gap-4 items-stretch sm:items-center px-4 py-3 hover:bg-muted/20 transition-colors group">
       <div className="flex flex-col gap-1 min-w-0 pr-0 sm:pr-4">
         <span className="text-sm text-foreground font-medium truncate">{env.name}</span>
         <div className="flex flex-col gap-1">
@@ -406,9 +407,19 @@ function GoalEnvelopeRow({
 
       <div className="flex items-center justify-between sm:flex-col sm:justify-center sm:items-stretch gap-2">
         <span className="text-xs text-muted-foreground sm:hidden font-medium">Save This Month:</span>
-        <div className="flex flex-col items-end gap-1.5 w-28 sm:w-full">
-          <div className="relative w-full">
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs font-medium">₹</span>
+        <div className="flex items-center rounded-lg border border-input bg-background shadow-xs hover:border-ring focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all overflow-hidden w-full max-w-[180px] sm:w-[180px]">
+          <Button
+            type="button"
+            onClick={handleQuickAdd}
+            disabled={isPending || !fillValue || isNaN(parseFloat(fillValue)) || parseFloat(fillValue) <= 0}
+            variant="ghost"
+            className="h-8 px-2.5 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/60 rounded-none border-r border-border disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+            title={`Add amount to ${env.name}`}
+          >
+            Add
+          </Button>
+          <div className="relative flex-1 min-w-0">
+            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs font-medium pointer-events-none">₹</span>
             <input
               id={`goal-input-${env.id}`}
               type="number"
@@ -416,36 +427,26 @@ function GoalEnvelopeRow({
               step="0.01"
               value={fillValue}
               onChange={(e) => setFillValue(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleQuickSet()}
               disabled={isPending}
               className={cn(
-                "w-full rounded-md border border-input bg-background pl-5 sm:pl-6 pr-2 py-1 text-sm text-right",
-                "focus:outline-none focus:ring-1 focus:ring-ring",
-                "disabled:opacity-50 transition-opacity",
+                "w-full bg-transparent pl-5 pr-2 py-1 text-sm font-medium text-right text-foreground focus:outline-none disabled:opacity-50 transition-opacity",
                 isPending && "opacity-60"
               )}
               placeholder="0.00"
               aria-label={`Save amount for ${env.name}`}
             />
           </div>
-          <div className="flex gap-1.5">
-            <Button
-              onClick={handleQuickAdd}
-              disabled={isPending || !fillValue || isNaN(parseFloat(fillValue)) || parseFloat(fillValue) <= 0}
-              variant="outline"
-              className="h-6 px-2 text-[10px] bg-background border-border hover:bg-muted text-foreground font-medium"
-            >
-              Add
-            </Button>
-            <Button
-              onClick={handleQuickSet}
-              disabled={isPending || !fillValue || isNaN(parseFloat(fillValue)) || parseFloat(fillValue) < 0}
-              variant="outline"
-              className="h-6 px-2 text-[10px] bg-background border-border hover:bg-muted text-foreground font-medium"
-            >
-              Set
-            </Button>
-          </div>
-          <span className="hidden sm:block text-[10px] text-muted-foreground text-right mt-1">This month</span>
+          <Button
+            type="button"
+            onClick={handleQuickSet}
+            disabled={isPending || !fillValue || isNaN(parseFloat(fillValue)) || parseFloat(fillValue) < 0}
+            variant="ghost"
+            className="h-8 px-2.5 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/60 rounded-none border-l border-border disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+            title={`Set amount for ${env.name}`}
+          >
+            Set
+          </Button>
         </div>
       </div>
 
