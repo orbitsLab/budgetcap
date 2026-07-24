@@ -21,6 +21,12 @@ export const metadata: Metadata = {
   },
   description:
     "Take control of your finances with Budgetcap — a zero-based envelope budgeting app built for Indian Rupees.",
+  icons: {
+    icon: [
+      { url: "bugetcap-logo-light.png", media: "(prefers-color-scheme: light)" },
+      { url: "bugetcap-logo-dark.png", media: "(prefers-color-scheme: dark)" },
+    ],
+  },
 };
 
 export default function RootLayout({
